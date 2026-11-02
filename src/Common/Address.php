@@ -86,6 +86,56 @@ final readonly class Address implements JsonSerializable, Stringable
         return trim("{$this->firstName} {$this->lastName}");
     }
 
+    public function getFirstName(): string
+    {
+        return $this->firstName;
+    }
+
+    public function getLastName(): string
+    {
+        return $this->lastName;
+    }
+
+    public function getAddress1(): string
+    {
+        return $this->address1;
+    }
+
+    public function getAddress2(): ?string
+    {
+        return $this->address2;
+    }
+
+    public function getCity(): string
+    {
+        return $this->city;
+    }
+
+    public function getState(): string
+    {
+        return $this->state;
+    }
+
+    public function getPostalCode(): string
+    {
+        return $this->postalCode;
+    }
+
+    public function getCountry(): string
+    {
+        return $this->country;
+    }
+
+    public function getPhone(): ?string
+    {
+        return $this->phone;
+    }
+
+    public function getCompany(): ?string
+    {
+        return $this->company;
+    }
+
     /**
      * Multi-line formatted postal address.
      */

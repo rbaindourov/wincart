@@ -44,10 +44,10 @@
                 </tr>
             </thead>
             <tbody>
-                <?php if (empty($orders)): ?>
+                <?php if (empty($orders)) : ?>
                     <tr><td colspan="6">No orders found.</td></tr>
-                <?php else: ?>
-                    <?php foreach ($orders as $o): ?>
+                <?php else : ?>
+                    <?php foreach ($orders as $o) : ?>
                         <tr>
                             <td><a href="/admin/orders/<?= (int)$o['id'] ?>"><?= htmlspecialchars($o['order_number'], ENT_QUOTES, 'UTF-8') ?></a></td>
                             <td><?= htmlspecialchars(($o['billing_first_name'] ?? '') . ' ' . ($o['billing_last_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>

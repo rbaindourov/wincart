@@ -30,7 +30,7 @@
     </nav>
     <div class="container">
         <h1>Dashboard Overview</h1>
-        <?php if (!empty($metrics['low_stock_products'])): ?>
+        <?php if (!empty($metrics['low_stock_products'])) : ?>
             <div class="alert-warning">
                 <strong>Attention:</strong> <?= (int)$metrics['low_stock_products'] ?> product(s) have low stock levels.
             </div>

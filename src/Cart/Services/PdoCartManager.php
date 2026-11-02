@@ -21,6 +21,7 @@ use WinCart\Catalog\Exceptions\InsufficientStockException;
 use WinCart\Catalog\Exceptions\ProductNotFoundException;
 use WinCart\Catalog\Repositories\PdoProductRepository;
 use WinCart\Catalog\Repositories\ProductRepositoryInterface;
+use WinCart\Common\Exceptions\InvalidCartOperationException;
 use WinCart\Common\Money;
 use WinCart\Common\ProductType;
 
@@ -147,6 +148,11 @@ final class PdoCartManager implements CartManagerInterface
             $variation = $this->productRepo->findVariationById($variationId);
             if ($variation === null) {
                 throw new ProductNotFoundException("Variation #{$variationId} not found");
+            }
+            if ($variation->getProductId() !== $productId) {
+                throw new InvalidCartOperationException(
+                    "Variation #{$variationId} does not belong to Product #{$productId}"
+                );
             }
             if ($variation->isManageStock()) {
                 if ($variation->getStockQuantity() <= 0) {

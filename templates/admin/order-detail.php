@@ -39,7 +39,7 @@
                     <tr><th>Product</th><th>SKU</th><th>Price</th><th>Qty</th><th>Subtotal</th></tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($items as $item): ?>
+                    <?php foreach ($items as $item) : ?>
                         <tr>
                             <td><?= htmlspecialchars($item['product_name'], ENT_QUOTES, 'UTF-8') ?></td>
                             <td><?= htmlspecialchars($item['product_sku'], ENT_QUOTES, 'UTF-8') ?></td>

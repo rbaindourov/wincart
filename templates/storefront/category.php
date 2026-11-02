@@ -23,7 +23,7 @@
     <main class="container">
         <h1>Category: <?= htmlspecialchars($category['name'] ?? 'Products', ENT_QUOTES, 'UTF-8') ?></h1>
         <div class="grid">
-            <?php foreach ($products as $p): ?>
+            <?php foreach ($products as $p) : ?>
                 <div class="product-card">
                     <h3><a href="/products/<?= htmlspecialchars($p['slug'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($p['name'], ENT_QUOTES, 'UTF-8') ?></a></h3>
                     <p class="price">$<?= number_format(((int)$p['price']) / 100, 2) ?></p>

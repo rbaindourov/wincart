@@ -115,6 +115,7 @@ final class CheckoutService implements CheckoutServiceInterface
             $orderItems = [];
             $subtotalAmount = 0;
             $currency = 'USD';
+            $hasShippableItems = false;
 
             foreach ($normalizedItems as $itemSpec) {
                 $pId = $itemSpec['product_id'];
@@ -141,6 +142,10 @@ final class CheckoutService implements CheckoutServiceInterface
                     $pSku = $product->getSku();
                     $unitPrice = $product->getEffectivePrice();
                     $attrsJson = null;
+                }
+
+                if ($product !== null && $product->requiresShipping()) {
+                    $hasShippableItems = true;
                 }
 
                 $currency = $unitPrice->getCurrency();
@@ -194,11 +199,17 @@ final class CheckoutService implements CheckoutServiceInterface
                     $shippingAddress->state
                 );
             } else {
-                // Free shipping threshold >= $150.00
-                $shippingFee = $discountedSubtotal->getAmount() >= 15000 ? 0 : 750;
+                if (!$hasShippableItems) {
+                    $shippingFee = 0;
+                    $effectiveMethod = $checkoutData['shipping_method'] ?? 'digital_delivery';
+                } else {
+                    // Free shipping threshold >= $150.00
+                    $shippingFee = $discountedSubtotal->getAmount() >= 15000 ? 0 : 750;
+                    $effectiveMethod = $shippingMethod;
+                }
                 $shippingResult = new \WinCart\Cart\Pricing\ShippingResult(
                     new Money($shippingFee, $currency),
-                    $shippingMethod,
+                    (string)$effectiveMethod,
                     $shippingFee === 0
                 );
             }

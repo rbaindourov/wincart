@@ -56,10 +56,16 @@ final class PdoCategoryRepository implements CategoryRepositoryInterface
             $byParent[$parentId][] = $category;
         }
 
-        $buildTree = function (int $parentId) use (&$buildTree, $byParent): array {
+        $visited = [];
+        $buildTree = function (int $parentId) use (&$buildTree, $byParent, &$visited): array {
             $tree = [];
             foreach ($byParent[$parentId] ?? [] as $category) {
-                $category->setChildren($buildTree($category->getId() ?? 0));
+                $catId = $category->getId() ?? 0;
+                if (isset($visited[$catId])) {
+                    continue;
+                }
+                $visited[$catId] = true;
+                $category->setChildren($buildTree($catId));
                 $tree[] = $category;
             }
             return $tree;
@@ -82,8 +88,13 @@ final class PdoCategoryRepository implements CategoryRepositoryInterface
         }
 
         $ids = [$categoryId];
-        $collect = function (int $id) use (&$collect, $byParent, &$ids): void {
+        $visited = [$categoryId => true];
+        $collect = function (int $id) use (&$collect, $byParent, &$ids, &$visited): void {
             foreach ($byParent[$id] ?? [] as $childId) {
+                if (isset($visited[$childId])) {
+                    continue;
+                }
+                $visited[$childId] = true;
                 $ids[] = $childId;
                 $collect($childId);
             }

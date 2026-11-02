@@ -61,6 +61,10 @@ final class TaxEngine
             }
         }
 
-        return self::DEFAULT_RATES[$state] ?? 0.0;
+        if (strtoupper($country) === 'US') {
+            return self::DEFAULT_RATES[$state] ?? 0.0;
+        }
+
+        return 0.0;
     }
 }
