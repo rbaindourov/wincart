@@ -69,6 +69,7 @@ final class Kernel
         ?string $body = null,
         array $headers = []
     ): HttpResponse {
+        $this->newSessionToken = null;
         $method = strtoupper($method);
         $parsedUrl = parse_url($uri);
         $path = $parsedUrl['path'] ?? '/';
@@ -328,7 +329,8 @@ final class Kernel
         // Auto-merge guest session cart into customer cart if session cart exists
         if ($sessionToken !== null && $sessionToken !== '') {
             $cartManager = new PdoCartManager($pdo);
-            $cartManager->mergeGuestCartIntoCustomerCart($sessionToken, $customerId);
+            $mergedCart = $cartManager->mergeGuestCartIntoCustomerCart($sessionToken, $customerId);
+            $this->newSessionToken = $mergedCart->getToken();
         }
 
         return $this->jsonResponse(200, [
@@ -336,6 +338,21 @@ final class Kernel
             'customer_id' => $customerId,
             'email' => $customer['email'],
         ]);
+    }
+
+    /**
+     * Resolve cart from session or customer, synchronizing session token cookie.
+     */
+    private function resolveCart(
+        PdoCartManager $cartManager,
+        ?string $sessionToken,
+        ?int $customerId
+    ): \WinCart\Cart\Models\Cart {
+        $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+        if ($this->newSessionToken !== null || ($sessionToken !== null && $sessionToken !== $cart->getToken())) {
+            $this->newSessionToken = $cart->getToken();
+        }
+        return $cart;
     }
 
     /**
@@ -356,9 +373,11 @@ final class Kernel
 
         // POST /api/v1/cart - initialize new cart
         if ($method === 'POST' && $path === '/api/v1/cart') {
-            $cart = $cartManager->getOrCreateCart(null, $customerId);
+            $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
+            $this->newSessionToken = $cart->getToken();
             return $this->jsonResponse(201, [
                 'cart_token' => $cart->getToken(),
+                'customer_id' => $cart->getCustomerId(),
                 'subtotal' => 0,
                 'items' => [],
             ]);
@@ -366,7 +385,7 @@ final class Kernel
 
         // GET /api/v1/cart - get cart details
         if ($method === 'GET' && $path === '/api/v1/cart') {
-            $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+            $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
             $totals = $cartManager->calculateTotals($cart);
             return $this->jsonResponse(200, $this->formatCartResponse($cart, $totals));
         }
@@ -402,7 +421,7 @@ final class Kernel
                 }
             }
 
-            $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+            $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
             $cartManager->addItem($cart, $productId, $quantity, $variationId);
             $cart = $cartManager->getCartByToken($cart->getToken()) ?? $cart;
 
@@ -414,7 +433,7 @@ final class Kernel
         if ($method === 'PATCH' && preg_match('#^/api/v1/cart/items/(\d+)$#', $path, $matches)) {
             $itemId = (int)$matches[1];
             $quantity = (int)($payload['quantity'] ?? 0);
-            $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+            $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
             $cartManager->updateItemQuantity($cart, $itemId, $quantity);
             $cart = $cartManager->getCartByToken($cart->getToken()) ?? $cart;
 
@@ -425,7 +444,7 @@ final class Kernel
         // DELETE /api/v1/cart/items/{id}
         if ($method === 'DELETE' && preg_match('#^/api/v1/cart/items/(\d+)$#', $path, $matches)) {
             $itemId = (int)$matches[1];
-            $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+            $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
             try {
                 $cartManager->removeItem($cart, $itemId);
             } catch (\Throwable) {
@@ -441,7 +460,7 @@ final class Kernel
                 return ProblemDetails::create(400, 'Bad Request', 'Coupon code cannot be empty');
             }
 
-            $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+            $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
             try {
                 $cartManager->applyCoupon($cart, $code);
                 $cart = $cartManager->getCartByToken($cart->getToken()) ?? $cart;
@@ -454,7 +473,7 @@ final class Kernel
 
         // POST /api/v1/cart/estimate
         if ($method === 'POST' && $path === '/api/v1/cart/estimate') {
-            $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+            $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
             $state = (string)($payload['state'] ?? 'WA');
             $country = (string)($payload['country'] ?? 'US');
             $totals = $cartManager->calculateTotals($cart, $state, $country);
@@ -463,7 +482,7 @@ final class Kernel
 
         // POST /api/v1/cart/estimate-tax
         if ($method === 'POST' && $path === '/api/v1/cart/estimate-tax') {
-            $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+            $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
             $state = (string)($payload['state'] ?? 'WA');
             $country = (string)($payload['country'] ?? 'US');
             $totals = $cartManager->calculateTotals($cart, $state, $country);
@@ -586,7 +605,7 @@ final class Kernel
         }
 
         $customerId = $this->resolveCustomerId($token, $pdo);
-        $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
+        $cart = $this->resolveCart($cartManager, $sessionToken, $customerId);
 
         // Empty cart checkout guard: strictly reject empty cart without payload items
         $hasPayloadItems = isset($payload['items']) && is_array($payload['items']) && count($payload['items']) > 0;
@@ -825,10 +844,12 @@ final class Kernel
             return [];
         }
 
+        $tokenHash = hash('sha256', $token);
         $stmt = $pdo->prepare(
-            'SELECT pat_scopes, role FROM customers WHERE pat_token_hash = :tok AND is_active = 1'
+            'SELECT pat_scopes, role FROM customers '
+            . 'WHERE (pat_token_hash = :hash OR pat_token_hash = :tok) AND is_active = 1'
         );
-        $stmt->execute([':tok' => $token]);
+        $stmt->execute([':hash' => $tokenHash, ':tok' => $token]);
         $row = $stmt->fetch();
         if ($row && !empty($row['pat_scopes'])) {
             $scopes = array_map('trim', explode(',', (string)$row['pat_scopes']));
@@ -854,8 +875,11 @@ final class Kernel
         if ($token === null || $token === '') {
             return null;
         }
-        $stmt = $pdo->prepare('SELECT id FROM customers WHERE pat_token_hash = :tok');
-        $stmt->execute([':tok' => $token]);
+        $tokenHash = hash('sha256', $token);
+        $stmt = $pdo->prepare(
+            'SELECT id FROM customers WHERE (pat_token_hash = :hash OR pat_token_hash = :tok) AND is_active = 1'
+        );
+        $stmt->execute([':hash' => $tokenHash, ':tok' => $token]);
         $id = $stmt->fetchColumn();
         return $id !== false ? (int)$id : null;
     }

@@ -65,23 +65,52 @@ final class PdoCartManager implements CartManagerInterface
         $stmt = $this->pdo->prepare(
             'INSERT INTO carts (token, customer_id, created_at, updated_at) VALUES (:token, :cid, :created, :updated)'
         );
-        $stmt->execute([
-            ':token' => $newToken,
-            ':cid' => $customerId,
-            ':created' => $now,
-            ':updated' => $now,
-        ]);
 
-        $id = (int)$this->pdo->lastInsertId();
-        return new Cart(
-            id: $id,
-            token: $newToken,
-            customerId: $customerId,
-            items: [],
-            currency: 'USD',
-            createdAt: new DateTimeImmutable($now),
-            updatedAt: new DateTimeImmutable($now)
-        );
+        try {
+            $stmt->execute([
+                ':token' => $newToken,
+                ':cid' => $customerId,
+                ':created' => $now,
+                ':updated' => $now,
+            ]);
+            $id = (int)$this->pdo->lastInsertId();
+
+            return new Cart(
+                id: $id,
+                token: $newToken,
+                customerId: $customerId,
+                items: [],
+                currency: 'USD',
+                createdAt: new DateTimeImmutable($now),
+                updatedAt: new DateTimeImmutable($now)
+            );
+        } catch (\PDOException $e) {
+            if ($this->isUniqueConstraintViolation($e)) {
+                $cart = $this->getCartByToken($newToken);
+                if ($cart !== null) {
+                    return $cart;
+                }
+            }
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Determine if a PDOException represents a unique key constraint violation
+     * across SQLite (code 19 / 2067) and MySQL (code 1062).
+     */
+    private function isUniqueConstraintViolation(\PDOException $e): bool
+    {
+        $sqlState = (string)($e->getCode() ?? '');
+        $driverCode = (int)($e->errorInfo[1] ?? 0);
+        $message = $e->getMessage();
+
+        return $sqlState === '23000'
+            || $sqlState === '23505'
+            || in_array($driverCode, [19, 1062, 2067], true)
+            || str_contains($message, 'UNIQUE constraint failed')
+            || str_contains($message, 'Duplicate entry');
     }
 
     public function getCartByToken(string $token): ?Cart

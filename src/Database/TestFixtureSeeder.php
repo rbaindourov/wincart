@@ -62,6 +62,15 @@ final class TestFixtureSeeder
                 'role' => 'admin',
                 'token' => 'pat_test_token',
                 'scopes' => 'admin,read,write',
+                'raw' => false,
+            ],
+            [
+                'id' => 8,
+                'email' => 'legacy@example.com',
+                'role' => 'customer',
+                'token' => 'pat_legacy_raw_unhashed_token',
+                'scopes' => 'read,write',
+                'raw' => true,
             ],
         ];
 
@@ -75,6 +84,7 @@ final class TestFixtureSeeder
 
         $passwordHash = password_hash('Password123!', PASSWORD_BCRYPT);
         foreach ($tokens as $t) {
+            $tokenValue = !empty($t['raw']) ? $t['token'] : hash('sha256', $t['token']);
             $custStmt->execute([
                 ':id' => $t['id'],
                 ':email' => $t['email'],
@@ -82,7 +92,7 @@ final class TestFixtureSeeder
                 ':fname' => 'Test',
                 ':lname' => 'User',
                 ':role' => $t['role'],
-                ':token' => $t['token'],
+                ':token' => $tokenValue,
                 ':scopes' => $t['scopes'],
                 ':now' => $now,
             ]);
