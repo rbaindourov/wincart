@@ -372,10 +372,35 @@ final class PdoCartManager implements CartManagerInterface
 
             $existingCustItem = $customerCart->findItemByProduct($pid, $vid);
             if ($existingCustItem !== null) {
-                // Update quantity
+                // Update quantity with stock clamping
                 $newQty = $existingCustItem->getQuantity() + $qty;
-                $upStmt = $this->pdo->prepare('UPDATE cart_items SET quantity = :qty WHERE id = :id');
-                $upStmt->execute([':qty' => $newQty, ':id' => $existingCustItem->getId()]);
+
+                // Clamp quantity to catalog stock if stock is managed and backorders not allowed
+                $product = $this->productRepo->findById($pid);
+                $variation = $vid !== null ? $this->productRepo->findVariationById($vid) : null;
+
+                $manageStock = $variation !== null
+                    ? $variation->isManageStock()
+                    : ($product !== null && $product->isManageStock());
+
+                $backordersAllowed = $product !== null && $product->isBackordersAllowed();
+
+                if ($manageStock && !$backordersAllowed) {
+                    $availableStock = $variation !== null
+                        ? $variation->getStockQuantity()
+                        : ($product !== null ? $product->getStockQuantity() : $newQty);
+
+                    if ($availableStock > 0) {
+                        $newQty = min($newQty, $availableStock);
+                    }
+                }
+                $newQty = max(1, $newQty);
+
+                $now = date('Y-m-d H:i:s');
+                $upStmt = $this->pdo->prepare(
+                    'UPDATE cart_items SET quantity = :qty, updated_at = :updated WHERE id = :id'
+                );
+                $upStmt->execute([':qty' => $newQty, ':updated' => $now, ':id' => $existingCustItem->getId()]);
             } else {
                 // Move item to customer cart
                 $moveStmt = $this->pdo->prepare('UPDATE cart_items SET cart_id = :cid WHERE id = :id');

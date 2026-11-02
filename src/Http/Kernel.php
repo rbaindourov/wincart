@@ -10,11 +10,15 @@ use WinCart\Admin\AdminMetricAggregator;
 use WinCart\Admin\AdminOrderController;
 use WinCart\Admin\AdminProductController;
 use WinCart\Admin\AdminSettingsController;
+use WinCart\Cart\Exceptions\CartItemNotFoundException;
+use WinCart\Cart\Exceptions\CartNotFoundException;
 use WinCart\Cart\Pricing\Coupon;
 use WinCart\Cart\Pricing\CouponCalculator;
 use WinCart\Cart\Pricing\ShippingCalculator;
 use WinCart\Cart\Pricing\TaxEngine;
 use WinCart\Cart\Services\PdoCartManager;
+use WinCart\Catalog\Exceptions\CategoryNotFoundException;
+use WinCart\Catalog\Exceptions\ProductNotFoundException;
 use WinCart\Catalog\Models\Product;
 use WinCart\Catalog\Repositories\PdoCategoryRepository;
 use WinCart\Catalog\Repositories\PdoProductRepository;
@@ -22,6 +26,7 @@ use WinCart\Checkout\CheckoutService;
 use WinCart\Checkout\Exceptions\EmptyCartException;
 use WinCart\Checkout\Exceptions\InsufficientStockException;
 use WinCart\Checkout\Exceptions\InvalidOrderStateTransitionException;
+use WinCart\Checkout\Exceptions\OrderNotFoundException;
 use WinCart\Checkout\Exceptions\PaymentFailedException;
 use WinCart\Checkout\PdoOrderRepository;
 use WinCart\Common\Address;
@@ -39,6 +44,7 @@ final class Kernel
     /** @var array<string, string> */
     private array $env;
     private ?PDO $pdo = null;
+    private ?string $newSessionToken = null;
 
     /**
      * @param array<string, string> $env
@@ -96,7 +102,23 @@ final class Kernel
         // 2. Dispatch Application Routes
         try {
             $pdo = $this->getPdo();
-            return $this->dispatchRoute($method, $path, $queryParams, $body, $headers, $pdo);
+            $response = $this->dispatchRoute($method, $path, $queryParams, $body, $headers, $pdo);
+            if ($this->newSessionToken !== null && $response->getHeaderLine('Set-Cookie') === '') {
+                $respHeaders = $response->getHeaders();
+                $respHeaders['Set-Cookie'] = [
+                    'wincart_session=' . urlencode($this->newSessionToken) . '; Path=/; HttpOnly',
+                ];
+                return new HttpResponse($response->getStatusCode(), $response->getBody(), $respHeaders);
+            }
+            return $response;
+        } catch (
+            OrderNotFoundException |
+            ProductNotFoundException |
+            CategoryNotFoundException |
+            CartNotFoundException |
+            CartItemNotFoundException $e
+        ) {
+            return ProblemDetails::create(404, 'Not Found', $e->getMessage());
         } catch (
             \WinCart\Checkout\Exceptions\InsufficientStockException |
             \WinCart\Catalog\Exceptions\InsufficientStockException $e
@@ -235,7 +257,7 @@ final class Kernel
 
         // Product Catalog Endpoints
         if ($path === '/api/v1/products' || str_starts_with($path, '/api/v1/products/')) {
-            return $this->handleProductRoutes($method, $path, $queryParams, $payload, $scopes, $pdo);
+            return $this->handleProductRoutes($method, $path, $queryParams, $payload, $token, $scopes, $pdo);
         }
 
         // Order & Checkout Endpoints
@@ -253,16 +275,22 @@ final class Kernel
 
         // Admin KPI Metrics & Settings
         if ($method === 'GET' && $path === '/api/v1/admin/metrics') {
+            if ($token === null || $token === '' || empty($scopes)) {
+                return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+            }
             if (!$this->hasScope($scopes, 'admin')) {
-                return ProblemDetails::create(401, 'Unauthorized', 'Admin privileges required');
+                return ProblemDetails::create(403, 'Forbidden', 'Admin privileges required');
             }
             $aggregator = new AdminMetricAggregator($pdo);
             return $this->jsonResponse(200, $aggregator->getMetrics());
         }
 
         if ($method === 'POST' && $path === '/api/v1/admin/settings/shipping') {
+            if ($token === null || $token === '' || empty($scopes)) {
+                return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+            }
             if (!$this->hasScope($scopes, 'admin')) {
-                return ProblemDetails::create(401, 'Unauthorized', 'Admin privileges required');
+                return ProblemDetails::create(403, 'Forbidden', 'Admin privileges required');
             }
             $controller = new AdminSettingsController($pdo);
             return $this->jsonResponse(200, $controller->apiUpdateShipping($payload));
@@ -387,11 +415,7 @@ final class Kernel
             $itemId = (int)$matches[1];
             $quantity = (int)($payload['quantity'] ?? 0);
             $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
-            try {
-                $cartManager->updateItemQuantity($cart, $itemId, $quantity);
-            } catch (\WinCart\Cart\Exceptions\CartItemNotFoundException) {
-                $cartManager->addItem($cart, 1, $quantity);
-            }
+            $cartManager->updateItemQuantity($cart, $itemId, $quantity);
             $cart = $cartManager->getCartByToken($cart->getToken()) ?? $cart;
 
             $totals = $cartManager->calculateTotals($cart);
@@ -463,6 +487,7 @@ final class Kernel
         string $path,
         array $queryParams,
         array $payload,
+        ?string $token,
         array $scopes,
         PDO $pdo
     ): HttpResponse {
@@ -476,6 +501,9 @@ final class Kernel
         if ($method === 'POST' && $path === '/api/v1/products') {
             if (!isset($payload['price']) || !is_numeric($payload['price'])) {
                 return ProblemDetails::create(422, 'Unprocessable Entity', 'Validation failed: price must be numeric');
+            }
+            if ($token === null || $token === '' || empty($scopes)) {
+                return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
             if (!$this->hasScope($scopes, 'write') && !$this->hasScope($scopes, 'admin')) {
                 return ProblemDetails::create(403, 'Forbidden', 'Token does not possess required privilege scope');
@@ -501,6 +529,9 @@ final class Kernel
         }
 
         if ($method === 'PUT' && preg_match('#^/api/v1/products/(\d+)$#', $path, $matches)) {
+            if ($token === null || $token === '' || empty($scopes)) {
+                return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+            }
             if (!$this->hasScope($scopes, 'write') && !$this->hasScope($scopes, 'admin')) {
                 return ProblemDetails::create(403, 'Forbidden', 'Token does not possess required privilege scope');
             }
@@ -509,6 +540,9 @@ final class Kernel
         }
 
         if ($method === 'DELETE' && preg_match('#^/api/v1/products/(\d+)$#', $path, $matches)) {
+            if ($token === null || $token === '' || empty($scopes)) {
+                return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+            }
             if (!$this->hasScope($scopes, 'write') && !$this->hasScope($scopes, 'admin')) {
                 return ProblemDetails::create(403, 'Forbidden', 'Token does not possess required privilege scope');
             }
@@ -554,22 +588,11 @@ final class Kernel
         $customerId = $this->resolveCustomerId($token, $pdo);
         $cart = $cartManager->getOrCreateCart($sessionToken, $customerId);
 
-        // Empty cart checkout guard
-        if (isset($payload['items']) && is_array($payload['items']) && count($payload['items']) === 0) {
-            return ProblemDetails::create(422, 'Unprocessable Entity', 'Cart cannot be empty for checkout submission');
-        }
-
-        if (($payload['cart_id'] ?? '') === 'empty_cart_token') {
-            return ProblemDetails::create(422, 'Unprocessable Entity', 'Cart cannot be empty for checkout submission');
-        }
-
-        if ($cart->isEmpty() && !isset($payload['items'])) {
-            $cartManager->addItem($cart, 1, 1);
-            $cart = $cartManager->getCartByToken($cart->getToken()) ?? $cart;
-        }
-
+        // Empty cart checkout guard: strictly reject empty cart without payload items
         $hasPayloadItems = isset($payload['items']) && is_array($payload['items']) && count($payload['items']) > 0;
-        if ($cart->isEmpty() && !$hasPayloadItems) {
+        $explicitEmptyItems = isset($payload['items']) && is_array($payload['items']) && count($payload['items']) === 0;
+
+        if ($explicitEmptyItems || ($cart->isEmpty() && !$hasPayloadItems)) {
             return ProblemDetails::create(422, 'Unprocessable Entity', 'Cart cannot be empty for checkout submission');
         }
 
@@ -628,7 +651,7 @@ final class Kernel
         $controller = new AdminOrderController($pdo);
 
         if ($method === 'GET' && $path === '/api/v1/orders') {
-            if ($token === null || $token === '') {
+            if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
             $orders = $controller->apiList($queryParams);
@@ -644,7 +667,7 @@ final class Kernel
         }
 
         if ($method === 'GET' && preg_match('#^/api/v1/orders/(\d+)$#', $path, $matches)) {
-            if ($token === null || $token === '') {
+            if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
             $order = $controller->apiShow((int)$matches[1]);
@@ -701,8 +724,12 @@ final class Kernel
         $catStmt->execute([':slug' => $slug]);
         $category = $catStmt->fetch();
 
+        if (!$category) {
+            return ProblemDetails::create(404, 'Not Found', "Category slug '{$slug}' not found");
+        }
+
         $repo = new PdoProductRepository($pdo);
-        $products = $category ? $repo->findByCategory((int)$category['id']) : [];
+        $products = $repo->findByCategory((int)$category['id']);
         $products = array_map(fn(Product $p) => $p->toArray(), $products);
 
         ob_start();
@@ -724,11 +751,7 @@ final class Kernel
         $product = $stmt->fetch();
 
         if (!$product) {
-            $product = [
-                'name' => ucwords(str_replace('-', ' ', $slug)),
-                'price' => 14999,
-                'stock_status' => 'in_stock',
-            ];
+            return ProblemDetails::create(404, 'Not Found', "Product slug '{$slug}' not found");
         }
 
         ob_start();
@@ -802,26 +825,20 @@ final class Kernel
             return [];
         }
 
-        $stmt = $pdo->prepare('SELECT pat_scopes, role FROM customers WHERE pat_token_hash = :tok');
+        $stmt = $pdo->prepare(
+            'SELECT pat_scopes, role FROM customers WHERE pat_token_hash = :tok AND is_active = 1'
+        );
         $stmt->execute([':tok' => $token]);
         $row = $stmt->fetch();
         if ($row && !empty($row['pat_scopes'])) {
             $scopes = array_map('trim', explode(',', (string)$row['pat_scopes']));
-            if ($row['role'] === 'admin' && !in_array('admin', $scopes, true)) {
+            if (($row['role'] ?? '') === 'admin' && !in_array('admin', $scopes, true)) {
                 $scopes[] = 'admin';
             }
             return $scopes;
         }
 
-        // Fallback scope resolution for test tokens
-        if (str_contains($token, 'admin')) {
-            return ['admin', 'read', 'write'];
-        }
-        if (str_contains($token, 'read_only') || str_contains($token, 'products_only')) {
-            return ['read'];
-        }
-
-        return ['read', 'write'];
+        return [];
     }
 
     /**
@@ -850,8 +867,11 @@ final class Kernel
      */
     private function extractSessionToken(array $headers, array $payload, array $queryParams): ?string
     {
-        if (!empty($payload['cart_token'])) {
-            return (string)$payload['cart_token'];
+        $this->newSessionToken = null;
+
+        $cartTokenPayload = $payload['cart_token'] ?? $payload['cart_id'] ?? null;
+        if (!empty($cartTokenPayload) && is_string($cartTokenPayload)) {
+            return (string)$cartTokenPayload;
         }
         if (!empty($queryParams['cart_token'])) {
             return (string)$queryParams['cart_token'];
@@ -867,7 +887,9 @@ final class Kernel
             }
         }
 
-        return 'cart_sess_' . substr(md5($this->env['DB_DATABASE'] ?? 'def_sess'), 0, 10);
+        $token = 'cart_sess_' . bin2hex(random_bytes(16));
+        $this->newSessionToken = $token;
+        return $token;
     }
 
     /**

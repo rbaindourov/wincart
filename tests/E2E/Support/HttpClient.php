@@ -147,10 +147,28 @@ class HttpClient
 
         $liveServer = getenv('TEST_HTTP_SERVER') ?: getenv('APP_URL');
         if ($liveServer !== false && is_string($liveServer) && $liveServer !== '') {
-            return $this->sendCurl($method, rtrim($liveServer, '/') . '/' . ltrim($uri, '/'), $body, $mergedHeaders);
+            $response = $this->sendCurl(
+                $method,
+                rtrim($liveServer, '/') . '/' . ltrim($uri, '/'),
+                $body,
+                $mergedHeaders
+            );
+        } else {
+            $response = $this->dispatchInMemory($method, $uri, $body, $mergedHeaders);
         }
 
-        return $this->dispatchInMemory($method, $uri, $body, $mergedHeaders);
+        $cookieHeader = $response->getHeaderLine('Set-Cookie');
+        if ($cookieHeader !== '') {
+            foreach (explode(';', $cookieHeader) as $part) {
+                $kv = explode('=', trim($part), 2);
+                if (count($kv) === 2 && strtolower(trim($kv[0])) === 'wincart_session') {
+                    $this->cookies['wincart_session'] = urldecode(trim($kv[1]));
+                    break;
+                }
+            }
+        }
+
+        return $response;
     }
 
     /**

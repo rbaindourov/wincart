@@ -40,7 +40,15 @@ class CartFeatureTest extends OpaqueBoxTestCase
         $this->requireHttp();
         $this->env->createLockfile();
 
-        $response = $this->http->patch('/api/v1/cart/items/1', [
+        // Add Product #1 to cart prior to updating quantity
+        $addRes = $this->http->post('/api/v1/cart/items', [
+            'product_id' => 1,
+            'quantity' => 2,
+        ]);
+        $this->assertSame(201, $addRes->getStatusCode());
+        $itemId = $addRes->getJson()['items'][0]['id'] ?? 1;
+
+        $response = $this->http->patch("/api/v1/cart/items/{$itemId}", [
             'quantity' => 4,
         ]);
 

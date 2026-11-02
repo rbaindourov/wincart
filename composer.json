@@ -32,7 +32,9 @@
         }
     },
     "scripts": {
-        "test": "phpunit",
+        "test": "phpunit --testsuite Unit,Feature",
+        "test:unit": "phpunit --testsuite Unit",
+        "test:feature": "phpunit --testsuite Feature",
         "test:e2e": "phpunit --testsuite E2E",
         "check-style": "phpcs --standard=PSR12 src/ tests/"
     },

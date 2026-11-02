@@ -23,6 +23,13 @@ class CheckoutFeatureTest extends OpaqueBoxTestCase
         $this->requireHttp();
         $this->env->createLockfile();
 
+        // Populate active cart with Product #1 prior to checkout
+        $addRes = $this->http->post('/api/v1/cart/items', [
+            'product_id' => 1,
+            'quantity' => 1,
+        ]);
+        $this->assertSame(201, $addRes->getStatusCode());
+
         $address = new Address(
             firstName: 'Marcus',
             lastName: 'Vance',
