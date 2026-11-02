@@ -108,9 +108,9 @@ winCart is a production-grade, modern PHP 8.x e-commerce platform engineered to 
 
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| 1 | Repository Migration & Modern Scaffolding | Clone legacy repo, branch legacy history, establish clean `main`, create `github.com/rbaindourov/wincart`, configure Composer PSR-4 scaffolding | none | PLANNED |
-| 2 | E2E Testing Track Infrastructure | Design requirement-driven opaque-box test runner, test fixtures, and Tiers 1-4 test suite; publish `TEST_READY.md` | none | PLANNED |
-| 3 | Modern PHP Core E-Commerce Architecture | 16-table normalized schema & migrations (SQLite/MySQL), Catalog, Cart, Checkout, Pluggable Payments, Admin Dashboard | M1 | PLANNED |
+| 1 | Repository Migration & Modern Scaffolding | Clone legacy repo, branch legacy history, establish clean `main`, create `github.com/rbaindourov/wincart`, configure Composer PSR-4 scaffolding | none | DONE |
+| 2 | E2E Testing Track Infrastructure | Design requirement-driven opaque-box test runner, test fixtures, and Tiers 1-4 test suite; publish `TEST_READY.md` | none | DONE |
+| 3 | Modern PHP Core E-Commerce Architecture | 16-table normalized schema & migrations (SQLite/MySQL), Catalog, Cart, Checkout, Pluggable Payments, Admin Dashboard | M1 | IN_PROGRESS |
 | 4 | Agent-First Interfaces (MCP & Headless API) | Native MCP server (stdio & SSE), 9+ core tools, Headless REST API (`/api/v1`), Bearer PAT auth, OpenAPI 3.0 | M3 | PLANNED |
 | 5 | Automated Quick Installer | CLI installer (`php bin/wincart install`), 5-step Web Wizard (`/install`), unconfigured interceptor, `storage/installed.lock` guard, demo seeder | M3 | PLANNED |
 | 6 | Final Milestone: 100% E2E Pass & Adversarial Hardening | Phase 1: Pass 100% E2E tests (Tiers 1-4); Phase 2: Adversarial coverage hardening (Tier 5) with challenger-worker loop | M2, M3, M4, M5 | PLANNED |

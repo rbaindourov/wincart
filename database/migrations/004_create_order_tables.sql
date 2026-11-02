@@ -1,0 +1,130 @@
+-- Migration: 004_create_order_tables.sql
+-- Description: Creates orders and order_items tables
+
+-- @driver: sqlite
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_number VARCHAR(50) NOT NULL UNIQUE,
+    customer_id INTEGER NULL REFERENCES customers(id) ON DELETE SET NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+    subtotal INTEGER NOT NULL,
+    discount_amount INTEGER NOT NULL DEFAULT 0,
+    coupon_code VARCHAR(50) NULL,
+    tax_amount INTEGER NOT NULL DEFAULT 0,
+    tax_rate DECIMAL(8,4) NOT NULL DEFAULT 0.0000,
+    shipping_amount INTEGER NOT NULL DEFAULT 0,
+    shipping_method VARCHAR(100) NOT NULL DEFAULT 'standard_ground',
+    grand_total INTEGER NOT NULL,
+    billing_first_name VARCHAR(100) NOT NULL,
+    billing_last_name VARCHAR(100) NOT NULL,
+    billing_company VARCHAR(100) NULL,
+    billing_address_1 VARCHAR(255) NOT NULL,
+    billing_address_2 VARCHAR(255) NULL,
+    billing_city VARCHAR(100) NOT NULL,
+    billing_state VARCHAR(100) NOT NULL,
+    billing_postal_code VARCHAR(50) NOT NULL,
+    billing_country VARCHAR(2) NOT NULL DEFAULT 'US',
+    billing_phone VARCHAR(50) NULL,
+    shipping_first_name VARCHAR(100) NOT NULL,
+    shipping_last_name VARCHAR(100) NOT NULL,
+    shipping_company VARCHAR(100) NULL,
+    shipping_address_1 VARCHAR(255) NOT NULL,
+    shipping_address_2 VARCHAR(255) NULL,
+    shipping_city VARCHAR(100) NOT NULL,
+    shipping_state VARCHAR(100) NOT NULL,
+    shipping_postal_code VARCHAR(50) NOT NULL,
+    shipping_country VARCHAR(2) NOT NULL DEFAULT 'US',
+    shipping_phone VARCHAR(50) NULL,
+    payment_method VARCHAR(50) NOT NULL,
+    payment_transaction_id VARCHAR(255) NULL,
+    customer_notes TEXT NULL,
+    admin_notes TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+
+CREATE TABLE IF NOT EXISTS order_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id INTEGER NULL REFERENCES products(id) ON DELETE SET NULL,
+    variation_id INTEGER NULL REFERENCES product_variations(id) ON DELETE SET NULL,
+    product_name VARCHAR(255) NOT NULL,
+    product_sku VARCHAR(100) NOT NULL,
+    attributes_json TEXT NULL,
+    unit_price INTEGER NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    line_subtotal INTEGER NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_prod_id ON order_items(product_id);
+
+-- @driver: mysql
+CREATE TABLE IF NOT EXISTS orders (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    order_number VARCHAR(50) NOT NULL UNIQUE,
+    customer_id BIGINT UNSIGNED NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+    subtotal BIGINT NOT NULL,
+    discount_amount BIGINT NOT NULL DEFAULT 0,
+    coupon_code VARCHAR(50) NULL,
+    tax_amount BIGINT NOT NULL DEFAULT 0,
+    tax_rate DECIMAL(8,4) NOT NULL DEFAULT 0.0000,
+    shipping_amount BIGINT NOT NULL DEFAULT 0,
+    shipping_method VARCHAR(100) NOT NULL DEFAULT 'standard_ground',
+    grand_total BIGINT NOT NULL,
+    billing_first_name VARCHAR(100) NOT NULL,
+    billing_last_name VARCHAR(100) NOT NULL,
+    billing_company VARCHAR(100) NULL,
+    billing_address_1 VARCHAR(255) NOT NULL,
+    billing_address_2 VARCHAR(255) NULL,
+    billing_city VARCHAR(100) NOT NULL,
+    billing_state VARCHAR(100) NOT NULL,
+    billing_postal_code VARCHAR(50) NOT NULL,
+    billing_country VARCHAR(2) NOT NULL DEFAULT 'US',
+    billing_phone VARCHAR(50) NULL,
+    shipping_first_name VARCHAR(100) NOT NULL,
+    shipping_last_name VARCHAR(100) NOT NULL,
+    shipping_company VARCHAR(100) NULL,
+    shipping_address_1 VARCHAR(255) NOT NULL,
+    shipping_address_2 VARCHAR(255) NULL,
+    shipping_city VARCHAR(100) NOT NULL,
+    shipping_state VARCHAR(100) NOT NULL,
+    shipping_postal_code VARCHAR(50) NOT NULL,
+    shipping_country VARCHAR(2) NOT NULL DEFAULT 'US',
+    shipping_phone VARCHAR(50) NULL,
+    payment_method VARCHAR(50) NOT NULL,
+    payment_transaction_id VARCHAR(255) NULL,
+    customer_notes TEXT NULL,
+    admin_notes TEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL,
+    INDEX idx_orders_customer_id (customer_id),
+    INDEX idx_orders_status (status),
+    INDEX idx_orders_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS order_items (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    order_id BIGINT UNSIGNED NOT NULL,
+    product_id BIGINT UNSIGNED NULL,
+    variation_id BIGINT UNSIGNED NULL,
+    product_name VARCHAR(255) NOT NULL,
+    product_sku VARCHAR(100) NOT NULL,
+    attributes_json TEXT NULL,
+    unit_price BIGINT NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    line_subtotal BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+    FOREIGN KEY (variation_id) REFERENCES product_variations(id) ON DELETE SET NULL,
+    INDEX idx_order_items_order_id (order_id),
+    INDEX idx_order_items_prod_id (product_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
