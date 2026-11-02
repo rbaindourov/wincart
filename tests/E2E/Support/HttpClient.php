@@ -6,6 +6,8 @@ namespace WinCart\Tests\E2E\Support;
 
 /**
  * In-memory PSR-15 request dispatcher and HTTP test client for opaque-box testing.
+ * Dispatches directly to WinCart\Http\Kernel or external HTTP test server.
+ * Completely free of canned facade responses.
  */
 class HttpClient
 {
@@ -21,6 +23,16 @@ class HttpClient
         string $baseUri = 'http://localhost'
     ) {
         $this->baseUri = rtrim($baseUri, '/');
+    }
+
+    public function isAvailable(): bool
+    {
+        $liveServer = getenv('TEST_HTTP_SERVER') ?: getenv('APP_URL');
+        if ($liveServer !== false && is_string($liveServer) && $liveServer !== '') {
+            return true;
+        }
+
+        return class_exists('WinCart\\Http\\Kernel');
     }
 
     public function withHeader(string $name, string $value): self
@@ -123,7 +135,6 @@ class HttpClient
             $mergedHeaders['Cookie'] = implode('; ', $cookieStrings);
         }
 
-        // Format JSON payload if array
         $body = null;
         if (is_array($data)) {
             $body = json_encode($data, JSON_THROW_ON_ERROR);
@@ -134,13 +145,11 @@ class HttpClient
             $body = $data;
         }
 
-        // Check for live server URL
         $liveServer = getenv('TEST_HTTP_SERVER') ?: getenv('APP_URL');
         if ($liveServer !== false && is_string($liveServer) && $liveServer !== '') {
             return $this->sendCurl($method, rtrim($liveServer, '/') . '/' . ltrim($uri, '/'), $body, $mergedHeaders);
         }
 
-        // In-memory PSR-15 execution check
         return $this->dispatchInMemory($method, $uri, $body, $mergedHeaders);
     }
 
@@ -153,7 +162,6 @@ class HttpClient
         ?string $body,
         array $headers
     ): HttpResponse {
-        // If an application kernel class exists, invoke it
         if (class_exists('WinCart\\Http\\Kernel')) {
             /** @var class-string $kernelClass */
             $kernelClass = 'WinCart\\Http\\Kernel';
@@ -165,52 +173,10 @@ class HttpClient
             }
         }
 
-        // Return standard opaque-box simulated response if kernel is not yet present
-        $parsedUri = parse_url($uri, PHP_URL_PATH) ?? '/';
-        $hasLock = $this->env->hasLockfile();
-
-        // Lockfile guard check for /install
-        if (str_starts_with($parsedUri, '/install')) {
-            if ($hasLock) {
-                return new HttpResponse(
-                    403,
-                    'Installation Locked: WinCart is already installed.',
-                    ['Content-Type' => ['text/plain']]
-                );
-            }
-
-            if ($method === 'GET') {
-                return new HttpResponse(
-                    200,
-                    '<html><body><h1>WinCart Quick Installer</h1><p>PHP Version: '
-                    . PHP_VERSION . '</p><p>storage/ is writable</p></body></html>',
-                    ['Content-Type' => ['text/html']]
-                );
-            }
-
-            if ($method === 'POST') {
-                return new HttpResponse(
-                    302,
-                    '',
-                    ['Location' => ['/install/store']]
-                );
-            }
-        }
-
-        // Unconfigured redirect if lockfile missing and not on install
-        if (!$hasLock && !str_starts_with($parsedUri, '/install')) {
-            return new HttpResponse(
-                302,
-                '',
-                ['Location' => ['/install']]
-            );
-        }
-
-        // Default route handling for simulated opaque box
-        return new HttpResponse(
-            200,
-            json_encode(['status' => 'ok', 'uri' => $uri]),
-            ['Content-Type' => ['application/json']]
+        throw new \RuntimeException(
+            "WinCart HTTP Kernel ['WinCart\\Http\\Kernel'] is not implemented. "
+            . "Awaiting Track A delivery (Milestones 3, 4, 5). "
+            . "Cannot dispatch [{$method} {$uri}] in-memory without the application kernel."
         );
     }
 

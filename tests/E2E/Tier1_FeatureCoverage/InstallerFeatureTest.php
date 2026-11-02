@@ -17,6 +17,7 @@ class InstallerFeatureTest extends OpaqueBoxTestCase
      */
     public function testCliInstallerUnattendedSqliteInstall(): void
     {
+        $this->requireCli();
         $this->assertFalse($this->env->hasLockfile());
 
         $result = $this->cli->run('install', [], [
@@ -30,15 +31,9 @@ class InstallerFeatureTest extends OpaqueBoxTestCase
             'non-interactive' => true,
         ]);
 
-        if (file_exists(dirname(__DIR__, 3) . '/bin/wincart')) {
-            $this->assertSame(0, $result->getExitCode());
-            $this->assertTrue($this->env->hasLockfile());
-            $this->assertStringContainsString('Installation completed successfully', $result->getOutput());
-        } else {
-            // Prior to M5 binary delivery, verify CLI execution contract returns structured result
-            $this->assertIsInt($result->getExitCode());
-            $this->assertIsString($result->getOutput());
-        }
+        $this->assertSame(0, $result->getExitCode(), 'CLI installer failed: ' . $result->getStderr());
+        $this->assertTrue($this->env->hasLockfile(), 'Expected storage/installed.lock to exist post-install');
+        $this->assertStringContainsString('Installation completed successfully', $result->getOutput());
     }
 
     /**
@@ -46,6 +41,7 @@ class InstallerFeatureTest extends OpaqueBoxTestCase
      */
     public function testWebWizardEnvironmentCheck(): void
     {
+        $this->requireHttp();
         $response = $this->http->get('/install?step=1');
 
         $this->assertSame(200, $response->getStatusCode());
@@ -59,6 +55,7 @@ class InstallerFeatureTest extends OpaqueBoxTestCase
      */
     public function testWebWizardAdminUserCreation(): void
     {
+        $this->requireHttp();
         $response = $this->http->post('/install/admin', [
             'username' => 'superadmin',
             'email' => 'admin@wincart.local',
@@ -66,7 +63,7 @@ class InstallerFeatureTest extends OpaqueBoxTestCase
             'password_confirmation' => 'Pass12345!',
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(302, $response->getStatusCode());
         if ($response->isRedirect()) {
             $this->assertStringContainsString('/install', $response->getHeaderLine('Location'));
         }
@@ -77,6 +74,7 @@ class InstallerFeatureTest extends OpaqueBoxTestCase
      */
     public function testInstallerDemoCatalogSeeding(): void
     {
+        $this->requireCli();
         $result = $this->cli->run('install', [], [
             'db-driver' => 'sqlite',
             'db-path' => $this->env->getDatabasePath(),
@@ -84,8 +82,8 @@ class InstallerFeatureTest extends OpaqueBoxTestCase
             'non-interactive' => true,
         ]);
 
-        $this->assertIsInt($result->getExitCode());
-        $this->assertIsString($result->getOutput());
+        $this->assertSame(0, $result->getExitCode(), 'CLI demo seeding failed: ' . $result->getStderr());
+        $this->assertTrue($this->env->hasLockfile());
     }
 
     /**
@@ -93,6 +91,7 @@ class InstallerFeatureTest extends OpaqueBoxTestCase
      */
     public function testInstallerLockfileGuardBlocksReinstallation(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
         $this->assertTrue($this->env->hasLockfile());
 

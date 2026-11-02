@@ -17,6 +17,7 @@ class McpServerFeatureTest extends OpaqueBoxTestCase
      */
     public function testMcpStdioInitializeHandshake(): void
     {
+        $this->requireMcp();
         $response = $this->mcp->initialize('2024-11-05');
 
         $this->assertJsonRpcSuccess($response);
@@ -31,6 +32,7 @@ class McpServerFeatureTest extends OpaqueBoxTestCase
      */
     public function testMcpToolsListEnumeration(): void
     {
+        $this->requireMcp();
         $this->mcp->initialize('2024-11-05');
         $response = $this->mcp->listTools();
 
@@ -63,6 +65,7 @@ class McpServerFeatureTest extends OpaqueBoxTestCase
      */
     public function testMcpToolSearchProducts(): void
     {
+        $this->requireMcp();
         $this->mcp->initialize('2024-11-05');
         $response = $this->mcp->callTool('search_products', ['query' => 'Microphone']);
 
@@ -76,6 +79,7 @@ class McpServerFeatureTest extends OpaqueBoxTestCase
      */
     public function testMcpToolGetProduct(): void
     {
+        $this->requireMcp();
         $this->mcp->initialize('2024-11-05');
         $response = $this->mcp->callTool('get_product', ['id' => 1]);
 
@@ -90,6 +94,7 @@ class McpServerFeatureTest extends OpaqueBoxTestCase
      */
     public function testMcpToolCreateProduct(): void
     {
+        $this->requireMcp();
         $this->mcp->initialize('2024-11-05');
         $response = $this->mcp->callTool('create_product', [
             'name' => 'Agent Sensor',
@@ -108,6 +113,7 @@ class McpServerFeatureTest extends OpaqueBoxTestCase
      */
     public function testMcpToolUpdateOrderStatus(): void
     {
+        $this->requireMcp();
         $this->mcp->initialize('2024-11-05');
         $response = $this->mcp->callTool('update_order_status', [
             'order_id' => 1,
@@ -125,6 +131,7 @@ class McpServerFeatureTest extends OpaqueBoxTestCase
      */
     public function testMcpToolGetStoreMetrics(): void
     {
+        $this->requireMcp();
         $this->mcp->initialize('2024-11-05');
         $response = $this->mcp->callTool('get_store_metrics', []);
 

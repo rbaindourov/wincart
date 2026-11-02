@@ -20,6 +20,7 @@ class BoundaryLimitsTest extends OpaqueBoxTestCase
      */
     public function testBoundaryProductQuantityExceedingStock(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->post('/api/v1/cart/items', [
@@ -27,7 +28,8 @@ class BoundaryLimitsTest extends OpaqueBoxTestCase
             'quantity' => 999999,
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(409, $response->getStatusCode());
+        $this->assertProblemDetails($response, 409, 'Conflict');
     }
 
     /**
@@ -35,19 +37,22 @@ class BoundaryLimitsTest extends OpaqueBoxTestCase
      */
     public function testBoundaryZeroAndNegativeQuantityAdditions(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $zeroRes = $this->http->post('/api/v1/cart/items', [
             'product_id' => 1,
             'quantity' => 0,
         ]);
-        $this->assertContains($zeroRes->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(422, $zeroRes->getStatusCode());
+        $this->assertProblemDetails($zeroRes, 422, 'Unprocessable Entity');
 
         $negRes = $this->http->post('/api/v1/cart/items', [
             'product_id' => 1,
             'quantity' => -5,
         ]);
-        $this->assertContains($negRes->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(422, $negRes->getStatusCode());
+        $this->assertProblemDetails($negRes, 422, 'Unprocessable Entity');
     }
 
     /**

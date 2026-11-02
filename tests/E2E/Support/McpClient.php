@@ -6,6 +6,8 @@ namespace WinCart\Tests\E2E\Support;
 
 /**
  * Standard I/O line-delimited JSON-RPC 2.0 client for bin/mcp-server.
+ * Uses non-blocking stream_select to continuously drain STDERR and prevent pipe deadlocks.
+ * Strictly communicates with the actual binary with zero canned facade simulations.
  */
 class McpClient
 {
@@ -15,6 +17,8 @@ class McpClient
     /** @var array<int, resource> */
     private array $pipes = [];
     private int $messageId = 1;
+    private string $stdoutBuffer = '';
+    private string $stderrBuffer = '';
 
     public function __construct(
         private TestEnvironment $env,
@@ -29,12 +33,33 @@ class McpClient
         $this->close();
     }
 
+    public function isAvailable(): bool
+    {
+        return file_exists($this->binaryPath);
+    }
+
+    public function getBinaryPath(): string
+    {
+        return $this->binaryPath;
+    }
+
+    public function getStderr(): string
+    {
+        return $this->stderrBuffer;
+    }
+
+    public function clearStderr(): void
+    {
+        $this->stderrBuffer = '';
+    }
+
     /**
      * @param array<string, mixed> $capabilities
      */
     public function initialize(
         string $protocolVersion = '2024-11-05',
-        array $capabilities = []
+        array $capabilities = [],
+        float $timeout = 10.0
     ): McpResponse {
         return $this->sendRaw([
             'jsonrpc' => '2.0',
@@ -48,23 +73,23 @@ class McpClient
                     'version' => '1.0.0',
                 ],
             ],
-        ]);
+        ], $timeout);
     }
 
-    public function listTools(): McpResponse
+    public function listTools(float $timeout = 10.0): McpResponse
     {
         return $this->sendRaw([
             'jsonrpc' => '2.0',
             'id' => $this->nextId(),
             'method' => 'tools/list',
             'params' => new \stdClass(),
-        ]);
+        ], $timeout);
     }
 
     /**
      * @param array<string, mixed> $arguments
      */
-    public function callTool(string $name, array $arguments = []): McpResponse
+    public function callTool(string $name, array $arguments = [], float $timeout = 10.0): McpResponse
     {
         return $this->sendRaw([
             'jsonrpc' => '2.0',
@@ -74,20 +99,20 @@ class McpClient
                 'name' => $name,
                 'arguments' => empty($arguments) ? new \stdClass() : $arguments,
             ],
-        ]);
+        ], $timeout);
     }
 
-    public function listResources(): McpResponse
+    public function listResources(float $timeout = 10.0): McpResponse
     {
         return $this->sendRaw([
             'jsonrpc' => '2.0',
             'id' => $this->nextId(),
             'method' => 'resources/list',
             'params' => new \stdClass(),
-        ]);
+        ], $timeout);
     }
 
-    public function readResource(string $uri): McpResponse
+    public function readResource(string $uri, float $timeout = 10.0): McpResponse
     {
         return $this->sendRaw([
             'jsonrpc' => '2.0',
@@ -96,37 +121,106 @@ class McpClient
             'params' => [
                 'uri' => $uri,
             ],
-        ]);
+        ], $timeout);
     }
 
     /**
      * @param array<string, mixed> $payload
      */
-    public function sendRaw(array $payload): McpResponse
+    public function sendRaw(array $payload, float $timeout = 10.0): McpResponse
     {
         $this->ensureStarted();
 
         if (!is_resource($this->process) || empty($this->pipes)) {
-            // Simulated MCP server response if binary not yet present
-            return $this->simulateMcpResponse($payload);
+            throw new \RuntimeException('MCP server process is not running.');
         }
 
-        $jsonLine = json_encode($payload, JSON_THROW_ON_ERROR) . "\n";
-        fwrite($this->pipes[0], $jsonLine);
-        fflush($this->pipes[0]);
+        // Drain any pending stderr prior to writing new request
+        $this->drainStderr();
 
-        $line = fgets($this->pipes[1]);
-        if ($line === false || trim($line) === '') {
-            $stderr = stream_get_contents($this->pipes[2]);
+        $jsonLine = json_encode($payload, JSON_THROW_ON_ERROR) . "\n";
+        $written = fwrite($this->pipes[0], $jsonLine);
+        if ($written === false) {
+            $this->drainStderr();
             return new McpResponse([
                 'jsonrpc' => '2.0',
                 'id' => $payload['id'] ?? null,
                 'error' => [
                     'code' => -32603,
-                    'message' => 'MCP process closed pipe unexpectedly: ' . trim((string)$stderr),
+                    'message' => 'Failed to write to MCP STDIN pipe. Stderr: ' . trim($this->stderrBuffer),
                 ],
             ]);
         }
+        fflush($this->pipes[0]);
+
+        $startTime = microtime(true);
+
+        while (!str_contains($this->stdoutBuffer, "\n")) {
+            $this->drainStderr();
+
+            $elapsed = microtime(true) - $startTime;
+            if ($elapsed >= $timeout) {
+                $this->drainStderr();
+                return new McpResponse([
+                    'jsonrpc' => '2.0',
+                    'id' => $payload['id'] ?? null,
+                    'error' => [
+                        'code' => -32000,
+                        'message' => "MCP request timed out after {$timeout}s. Stderr: " . trim($this->stderrBuffer),
+                    ],
+                ]);
+            }
+
+            $r = [$this->pipes[1], $this->pipes[2]];
+            $w = null;
+            $e = null;
+
+            $remaining = max(0.001, $timeout - $elapsed);
+            $sec = (int)floor($remaining);
+            $usec = (int)(($remaining - $sec) * 1_000_000);
+
+            $numChanged = stream_select($r, $w, $e, $sec, $usec);
+            if ($numChanged === false) {
+                break;
+            }
+
+            if (in_array($this->pipes[2], $r, true)) {
+                $this->drainStderr();
+            }
+
+            if (in_array($this->pipes[1], $r, true)) {
+                $chunk = fread($this->pipes[1], 8192);
+                if ($chunk !== false && $chunk !== '') {
+                    $this->stdoutBuffer .= $chunk;
+                } elseif (feof($this->pipes[1])) {
+                    $this->drainStderr();
+                    return new McpResponse([
+                        'jsonrpc' => '2.0',
+                        'id' => $payload['id'] ?? null,
+                        'error' => [
+                            'code' => -32603,
+                            'message' => 'MCP process closed pipe unexpectedly: ' . trim($this->stderrBuffer),
+                        ],
+                    ]);
+                }
+            }
+        }
+
+        $newlinePos = strpos($this->stdoutBuffer, "\n");
+        if ($newlinePos === false) {
+            $this->drainStderr();
+            return new McpResponse([
+                'jsonrpc' => '2.0',
+                'id' => $payload['id'] ?? null,
+                'error' => [
+                    'code' => -32603,
+                    'message' => 'MCP process closed without completing response line: ' . trim($this->stderrBuffer),
+                ],
+            ]);
+        }
+
+        $line = substr($this->stdoutBuffer, 0, $newlinePos);
+        $this->stdoutBuffer = substr($this->stdoutBuffer, $newlinePos + 1);
 
         $decoded = json_decode(trim($line), true);
         if (!is_array($decoded)) {
@@ -135,12 +229,21 @@ class McpClient
                 'id' => $payload['id'] ?? null,
                 'error' => [
                     'code' => -32700,
-                    'message' => 'Parse error: invalid JSON received from MCP server',
+                    'message' => 'Parse error: invalid JSON received from MCP server. Line was: ' . $line,
                 ],
             ]);
         }
 
         return new McpResponse($decoded);
+    }
+
+    private function drainStderr(): void
+    {
+        if (isset($this->pipes[2]) && is_resource($this->pipes[2])) {
+            while (($chunk = fread($this->pipes[2], 8192)) !== false && $chunk !== '') {
+                $this->stderrBuffer .= $chunk;
+            }
+        }
     }
 
     private function ensureStarted(): void
@@ -150,7 +253,9 @@ class McpClient
         }
 
         if (!file_exists($this->binaryPath)) {
-            return;
+            throw new \RuntimeException(
+                "MCP server binary not found at [{$this->binaryPath}]. Awaiting Track A Milestone 4 delivery."
+            );
         }
 
         $cmd = [PHP_BINARY, $this->binaryPath];
@@ -166,10 +271,17 @@ class McpClient
         );
 
         $process = proc_open($cmd, $descriptors, $pipes, dirname($this->binaryPath, 2), $env);
-        if (is_resource($process)) {
-            $this->process = $process;
-            $this->pipes = $pipes;
+        if (!is_resource($process)) {
+            throw new \RuntimeException("Failed to spawn MCP server process: " . implode(' ', $cmd));
         }
+
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $this->process = $process;
+        $this->pipes = $pipes;
+        $this->stdoutBuffer = '';
+        $this->stderrBuffer = '';
     }
 
     public function close(): void
@@ -184,165 +296,19 @@ class McpClient
         }
 
         if (is_resource($this->process)) {
-            proc_terminate($this->process);
+            $status = proc_get_status($this->process);
+            if ($status['running']) {
+                proc_terminate($this->process);
+            }
             proc_close($this->process);
             $this->process = null;
         }
+
+        $this->stdoutBuffer = '';
     }
 
     private function nextId(): int
     {
         return $this->messageId++;
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function simulateMcpResponse(array $payload): McpResponse
-    {
-        $id = $payload['id'] ?? 1;
-        $method = $payload['method'] ?? '';
-
-        if ($method === 'initialize') {
-            return new McpResponse([
-                'jsonrpc' => '2.0',
-                'id' => $id,
-                'result' => [
-                    'protocolVersion' => '2024-11-05',
-                    'capabilities' => ['tools' => new \stdClass()],
-                    'serverInfo' => [
-                        'name' => 'wincart-mcp',
-                        'version' => '1.0.0',
-                    ],
-                ],
-            ]);
-        }
-
-        if ($method === 'tools/list') {
-            return new McpResponse([
-                'jsonrpc' => '2.0',
-                'id' => $id,
-                'result' => [
-                    'tools' => [
-                        ['name' => 'search_products', 'description' => 'Search product catalog'],
-                        ['name' => 'get_product', 'description' => 'Get product details by ID or SKU'],
-                        ['name' => 'create_product', 'description' => 'Create a new product in the catalog'],
-                        ['name' => 'update_product', 'description' => 'Update product attributes and stock'],
-                        ['name' => 'delete_product', 'description' => 'Delete product from the catalog'],
-                        ['name' => 'list_orders', 'description' => 'Query customer and store orders'],
-                        ['name' => 'get_order', 'description' => 'Inspect complete order details and line items'],
-                        ['name' => 'update_order_status', 'description' => 'Transition order lifecycle status'],
-                        ['name' => 'get_store_metrics', 'description' => 'Aggregate real-time sales and stock metrics'],
-                    ],
-                ],
-            ]);
-        }
-
-        if ($method === 'tools/call') {
-            $toolName = $payload['params']['name'] ?? '';
-            $args = $payload['params']['arguments'] ?? [];
-
-            if ($toolName === 'search_products') {
-                return new McpResponse([
-                    'jsonrpc' => '2.0',
-                    'id' => $id,
-                    'result' => [
-                        'content' => [
-                            [
-                                'type' => 'text',
-                                'text' => json_encode([
-                                    ['id' => 1, 'name' => 'Studio Microphone', 'price' => 19900],
-                                ]),
-                            ],
-                        ],
-                    ],
-                ]);
-            }
-
-            if ($toolName === 'get_product') {
-                return new McpResponse([
-                    'jsonrpc' => '2.0',
-                    'id' => $id,
-                    'result' => [
-                        'content' => [
-                            [
-                                'type' => 'text',
-                                'text' => json_encode([
-                                    'id' => 1,
-                                    'name' => 'Studio Microphone',
-                                    'sku' => 'MIC-001',
-                                    'price' => 19900,
-                                    'stock_quantity' => 15,
-                                ]),
-                            ],
-                        ],
-                    ],
-                ]);
-            }
-
-            if ($toolName === 'create_product') {
-                return new McpResponse([
-                    'jsonrpc' => '2.0',
-                    'id' => $id,
-                    'result' => [
-                        'content' => [
-                            [
-                                'type' => 'text',
-                                'text' => json_encode([
-                                    'id' => 401,
-                                    'name' => $args['name'] ?? 'New Product',
-                                    'sku' => $args['sku'] ?? 'SKU-001',
-                                    'price' => $args['price'] ?? 4999,
-                                    'stock_quantity' => $args['stock_quantity'] ?? 10,
-                                ]),
-                            ],
-                        ],
-                    ],
-                ]);
-            }
-
-            if ($toolName === 'update_order_status') {
-                return new McpResponse([
-                    'jsonrpc' => '2.0',
-                    'id' => $id,
-                    'result' => [
-                        'content' => [
-                            [
-                                'type' => 'text',
-                                'text' => json_encode([
-                                    'order_id' => $args['order_id'] ?? 1,
-                                    'status' => $args['status'] ?? 'completed',
-                                ]),
-                            ],
-                        ],
-                    ],
-                ]);
-            }
-
-            if ($toolName === 'get_store_metrics') {
-                return new McpResponse([
-                    'jsonrpc' => '2.0',
-                    'id' => $id,
-                    'result' => [
-                        'content' => [
-                            [
-                                'type' => 'text',
-                                'text' => json_encode([
-                                    'total_orders' => 12,
-                                    'total_revenue' => 145000,
-                                    'low_stock_products' => 2,
-                                ]),
-                            ],
-                        ],
-                    ],
-                ]);
-            }
-        }
-
-        return new McpResponse([
-            'jsonrpc' => '2.0',
-            'id' => $id,
-            'result' => ['status' => 'success'],
-        ]);
     }
 }

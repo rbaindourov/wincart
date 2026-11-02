@@ -19,6 +19,7 @@ class ExtremeValuesTest extends OpaqueBoxTestCase
      */
     public function testExtremeTenThousandCharacterAddressInput(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $largeText = str_repeat('A', 10000);
@@ -37,7 +38,7 @@ class ExtremeValuesTest extends OpaqueBoxTestCase
         $response = $this->http->post('/api/v1/checkout', [
             'shipping_address' => $address->toArray(),
         ]);
-        $this->assertContains($response->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(422, $response->getStatusCode());
     }
 
     /**
@@ -101,9 +102,10 @@ class ExtremeValuesTest extends OpaqueBoxTestCase
      */
     public function testExtremeHighCardinalityPaginationBounds(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->get('/api/v1/products?limit=5000&page=999999');
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
     }
 }

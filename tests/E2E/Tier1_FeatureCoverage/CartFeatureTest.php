@@ -18,6 +18,7 @@ class CartFeatureTest extends OpaqueBoxTestCase
      */
     public function testCartAddItem(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->post('/api/v1/cart/items', [
@@ -25,7 +26,7 @@ class CartFeatureTest extends OpaqueBoxTestCase
             'quantity' => 2,
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 201, 302]);
+        $this->assertSame(201, $response->getStatusCode());
         $itemPrice = new Money(2500, 'USD');
         $lineTotal = $itemPrice->multiply(2);
         $this->assertSame(5000, $lineTotal->getAmount());
@@ -36,13 +37,14 @@ class CartFeatureTest extends OpaqueBoxTestCase
      */
     public function testCartUpdateQuantity(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->patch('/api/v1/cart/items/1', [
             'quantity' => 4,
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
         $itemPrice = new Money(2500, 'USD');
         $updatedTotal = $itemPrice->multiply(4);
         $this->assertSame(10000, $updatedTotal->getAmount());
@@ -53,10 +55,11 @@ class CartFeatureTest extends OpaqueBoxTestCase
      */
     public function testCartRemoveItem(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->delete('/api/v1/cart/items/1');
-        $this->assertContains($response->getStatusCode(), [200, 204, 302, 404]);
+        $this->assertSame(204, $response->getStatusCode());
     }
 
     /**
@@ -64,13 +67,14 @@ class CartFeatureTest extends OpaqueBoxTestCase
      */
     public function testCartApplyValidDiscountCoupon(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->post('/api/v1/cart/coupons', [
             'code' => 'DISCOUNT15',
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
 
         // Verify discount math: $100.00 subtotal with 15% discount
         $subtotal = new Money(10000, 'USD');
@@ -85,11 +89,12 @@ class CartFeatureTest extends OpaqueBoxTestCase
      */
     public function testCartPersistenceAcrossSessions(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $clientWithSession = $this->http->withSession('test_sess_token_123');
         $response = $clientWithSession->get('/api/v1/cart');
 
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
     }
 }

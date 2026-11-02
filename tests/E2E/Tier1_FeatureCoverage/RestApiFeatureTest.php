@@ -17,12 +17,13 @@ class RestApiFeatureTest extends OpaqueBoxTestCase
      */
     public function testApiBearerTokenAuthentication(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $clientWithToken = $this->http->withToken('pat_valid_test_token_123');
         $response = $clientWithToken->get('/api/v1/products');
 
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     /**
@@ -30,6 +31,7 @@ class RestApiFeatureTest extends OpaqueBoxTestCase
      */
     public function testApiProductCrudLifecycle(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
         $client = $this->http->withToken('pat_admin_scope_token');
 
@@ -39,18 +41,18 @@ class RestApiFeatureTest extends OpaqueBoxTestCase
             'price' => 9900,
             'stock_quantity' => 10,
         ]);
-        $this->assertContains($createRes->getStatusCode(), [200, 201, 302]);
+        $this->assertSame(201, $createRes->getStatusCode());
 
         $getRes = $client->get('/api/v1/products/1');
-        $this->assertContains($getRes->getStatusCode(), [200, 302, 404]);
+        $this->assertSame(200, $getRes->getStatusCode());
 
         $updateRes = $client->put('/api/v1/products/1', [
             'price' => 8900,
         ]);
-        $this->assertContains($updateRes->getStatusCode(), [200, 302, 404]);
+        $this->assertSame(200, $updateRes->getStatusCode());
 
         $deleteRes = $client->delete('/api/v1/products/1');
-        $this->assertContains($deleteRes->getStatusCode(), [200, 204, 302, 404]);
+        $this->assertSame(204, $deleteRes->getStatusCode());
     }
 
     /**
@@ -58,16 +60,17 @@ class RestApiFeatureTest extends OpaqueBoxTestCase
      */
     public function testApiCartEndpoints(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $initRes = $this->http->post('/api/v1/cart');
-        $this->assertContains($initRes->getStatusCode(), [200, 201, 302]);
+        $this->assertSame(201, $initRes->getStatusCode());
 
         $addItemRes = $this->http->post('/api/v1/cart/items', [
             'product_id' => 1,
             'quantity' => 1,
         ]);
-        $this->assertContains($addItemRes->getStatusCode(), [200, 201, 302]);
+        $this->assertSame(201, $addItemRes->getStatusCode());
     }
 
     /**
@@ -75,11 +78,12 @@ class RestApiFeatureTest extends OpaqueBoxTestCase
      */
     public function testApiOrderQueries(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
         $client = $this->http->withToken('pat_admin_scope_token');
 
         $response = $client->get('/api/v1/orders?status=completed&limit=5');
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     /**
@@ -87,12 +91,21 @@ class RestApiFeatureTest extends OpaqueBoxTestCase
      */
     public function testApiRfc7807ErrorFormatting(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->post('/api/v1/products', [
             'price' => 'invalid-not-numeric',
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertProblemDetails($response, 422, 'Unprocessable Entity');
+        $json = $response->getJson();
+        $this->assertArrayHasKey('type', $json);
+        $this->assertArrayHasKey('title', $json);
+        $this->assertArrayHasKey('status', $json);
+        $this->assertArrayHasKey('detail', $json);
+        $this->assertSame(422, (int)$json['status']);
+        $this->assertStringContainsStringIgnoringCase('price', (string)$json['detail']);
     }
 }

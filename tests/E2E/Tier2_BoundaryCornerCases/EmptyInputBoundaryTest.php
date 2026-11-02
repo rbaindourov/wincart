@@ -19,6 +19,7 @@ class EmptyInputBoundaryTest extends OpaqueBoxTestCase
      */
     public function testBoundaryEmptyCartCheckoutRejection(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->post('/api/v1/checkout', [
@@ -26,7 +27,8 @@ class EmptyInputBoundaryTest extends OpaqueBoxTestCase
             'items' => [],
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertProblemDetails($response, 422, 'Unprocessable Entity');
     }
 
     /**
@@ -53,10 +55,12 @@ class EmptyInputBoundaryTest extends OpaqueBoxTestCase
      */
     public function testBoundaryEmptyCatalogSearchString(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->get('/api/v1/products?search=');
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertIsArray($response->getJson());
     }
 
     /**
@@ -64,13 +68,15 @@ class EmptyInputBoundaryTest extends OpaqueBoxTestCase
      */
     public function testBoundaryBlankCouponCode(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->post('/api/v1/cart/coupons', [
             'code' => '   ',
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(400, $response->getStatusCode());
+        $this->assertProblemDetails($response, 400, 'Bad Request');
     }
 
     /**
@@ -78,12 +84,14 @@ class EmptyInputBoundaryTest extends OpaqueBoxTestCase
      */
     public function testBoundaryOrderSubmissionZeroLineItems(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->post('/api/v1/orders', [
             'items' => [],
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertProblemDetails($response, 422, 'Unprocessable Entity');
     }
 }

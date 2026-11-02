@@ -20,6 +20,7 @@ class CheckoutFeatureTest extends OpaqueBoxTestCase
      */
     public function testCheckoutOrderSubmissionEndToEnd(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $address = new Address(
@@ -41,7 +42,7 @@ class CheckoutFeatureTest extends OpaqueBoxTestCase
             'payment_token' => 'tok_mock_success',
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 201, 302]);
+        $this->assertSame(201, $response->getStatusCode());
     }
 
     /**
@@ -78,6 +79,7 @@ class CheckoutFeatureTest extends OpaqueBoxTestCase
      */
     public function testCheckoutMockPaymentProcessing(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->post('/api/v1/payments/process', [
@@ -87,7 +89,7 @@ class CheckoutFeatureTest extends OpaqueBoxTestCase
             'currency' => 'USD',
         ]);
 
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     /**

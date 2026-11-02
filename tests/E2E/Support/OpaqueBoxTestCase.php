@@ -8,7 +8,7 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Base test case for all winCart opaque-box end-to-end tests (Tiers 1-4).
- * Provides sandboxed test environments, isolated transports, and assertion helpers.
+ * Provides sandboxed test environments, isolated transports, and dual-track requirement guards.
  */
 abstract class OpaqueBoxTestCase extends TestCase
 {
@@ -39,6 +39,45 @@ abstract class OpaqueBoxTestCase extends TestCase
         parent::tearDown();
     }
 
+    /**
+     * Guard declaring requirement for the HTTP application kernel.
+     * In Dual-Track development prior to Milestone 3 delivery, marks test incomplete.
+     */
+    protected function requireHttp(): void
+    {
+        if (!$this->http->isAvailable()) {
+            $this->markTestIncomplete(
+                'Awaiting Track A HTTP delivery: WinCart\\Http\\Kernel is not yet implemented.'
+            );
+        }
+    }
+
+    /**
+     * Guard declaring requirement for the CLI management binary.
+     * In Dual-Track development prior to Milestone 5 delivery, marks test incomplete.
+     */
+    protected function requireCli(): void
+    {
+        if (!$this->cli->isAvailable()) {
+            $this->markTestIncomplete(
+                'Awaiting Track A CLI delivery: bin/wincart is not yet implemented.'
+            );
+        }
+    }
+
+    /**
+     * Guard declaring requirement for the stdio MCP server binary.
+     * In Dual-Track development prior to Milestone 4 delivery, marks test incomplete.
+     */
+    protected function requireMcp(): void
+    {
+        if (!$this->mcp->isAvailable()) {
+            $this->markTestIncomplete(
+                'Awaiting Track A MCP delivery: bin/mcp-server is not yet implemented.'
+            );
+        }
+    }
+
     protected function assertProblemDetails(
         HttpResponse $response,
         int $expectedStatus,
@@ -53,11 +92,17 @@ abstract class OpaqueBoxTestCase extends TestCase
         );
 
         $json = $response->getJson();
-        $this->assertArrayHasKey('status', $json);
+        $this->assertIsArray($json, 'Problem details body must be valid JSON');
+
+        // RFC 7807 Canonical Member Verification
+        $this->assertArrayHasKey('type', $json, 'RFC 7807 problem details must contain "type" member');
+        $this->assertArrayHasKey('title', $json, 'RFC 7807 problem details must contain "title" member');
+        $this->assertArrayHasKey('status', $json, 'RFC 7807 problem details must contain "status" member');
+        $this->assertArrayHasKey('detail', $json, 'RFC 7807 problem details must contain "detail" member');
+
         $this->assertSame($expectedStatus, (int)$json['status']);
 
         if ($expectedTitle !== null) {
-            $this->assertArrayHasKey('title', $json);
             $this->assertStringContainsStringIgnoringCase($expectedTitle, (string)$json['title']);
         }
     }

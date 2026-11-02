@@ -17,6 +17,7 @@ class SecurityGuardsTest extends OpaqueBoxTestCase
      */
     public function testSecurityAccessingInstallPostInstallation(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->get('/install');
@@ -25,14 +26,16 @@ class SecurityGuardsTest extends OpaqueBoxTestCase
     }
 
     /**
-     * Test 2: Accessing private API routes without Bearer token returns 401 / 302.
+     * Test 2: Accessing private API routes without Bearer token returns 401 Unauthorized.
      */
     public function testSecurityAccessingPrivateApiWithoutToken(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->get('/api/v1/orders');
-        $this->assertContains($response->getStatusCode(), [200, 302, 401]);
+        $this->assertSame(401, $response->getStatusCode());
+        $this->assertProblemDetails($response, 401, 'Unauthorized');
     }
 
     /**
@@ -40,17 +43,20 @@ class SecurityGuardsTest extends OpaqueBoxTestCase
      */
     public function testSecurityInvalidAndExpiredCouponCodes(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $expiredRes = $this->http->post('/api/v1/cart/coupons', [
             'code' => 'EXPIRED_2020',
         ]);
-        $this->assertContains($expiredRes->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(400, $expiredRes->getStatusCode());
+        $this->assertProblemDetails($expiredRes, 400, 'Invalid Coupon');
 
         $invalidRes = $this->http->post('/api/v1/cart/coupons', [
             'code' => 'DOES_NOT_EXIST_XYZ',
         ]);
-        $this->assertContains($invalidRes->getStatusCode(), [200, 302, 400, 422]);
+        $this->assertSame(400, $invalidRes->getStatusCode());
+        $this->assertProblemDetails($invalidRes, 400, 'Invalid Coupon');
     }
 
     /**
@@ -58,12 +64,14 @@ class SecurityGuardsTest extends OpaqueBoxTestCase
      */
     public function testSecurityInsufficientApiTokenScopes(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $readOnlyClient = $this->http->withToken('pat_read_only_token_abc');
         $deleteRes = $readOnlyClient->delete('/api/v1/products/1');
 
-        $this->assertContains($deleteRes->getStatusCode(), [200, 204, 302, 403, 404]);
+        $this->assertSame(403, $deleteRes->getStatusCode());
+        $this->assertProblemDetails($deleteRes, 403, 'Forbidden');
     }
 
     /**
@@ -71,6 +79,7 @@ class SecurityGuardsTest extends OpaqueBoxTestCase
      */
     public function testSecurityDirectoryTraversalPathInjection(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $traversalRes = $this->http->post('/api/v1/uploads', [
@@ -78,7 +87,8 @@ class SecurityGuardsTest extends OpaqueBoxTestCase
             'filename' => 'passwd',
         ]);
 
-        $this->assertContains($traversalRes->getStatusCode(), [200, 302, 400, 403, 404, 422]);
+        $this->assertSame(400, $traversalRes->getStatusCode());
+        $this->assertProblemDetails($traversalRes, 400, 'Bad Request');
         $this->assertFileDoesNotExist(dirname(__DIR__, 3) . '/public/uploads/../../../../etc/passwd');
     }
 }

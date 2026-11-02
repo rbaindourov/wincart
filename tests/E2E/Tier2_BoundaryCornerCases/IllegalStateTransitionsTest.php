@@ -4,23 +4,29 @@ declare(strict_types=1);
 
 namespace WinCart\Tests\E2E\Tier2_BoundaryCornerCases;
 
-use WinCart\Common\OrderStatus;
 use WinCart\Tests\E2E\Support\OpaqueBoxTestCase;
 
 /**
  * Tier 2: Boundary & Corner Cases — Order Lifecycle Finite State Machine Guards.
- * Verifies edge cases #21-#26 from PROJECT.md and test specifications.
+ * Verifies edge cases #21-#26 from PROJECT.md and test specifications via public HTTP API.
  */
 class IllegalStateTransitionsTest extends OpaqueBoxTestCase
 {
     /**
-     * Test 1: Reverting completed order to pending or processing is strictly rejected.
+     * Test 1: Reverting completed order to pending or processing is strictly rejected with 422.
      */
     public function testFsmRevertingCompletedOrderRejected(): void
     {
-        $completed = OrderStatus::Completed;
-        $this->assertFalse($completed->canTransitionTo(OrderStatus::Pending));
-        $this->assertFalse($completed->canTransitionTo(OrderStatus::Processing));
+        $this->requireHttp();
+        $this->env->createLockfile();
+
+        // Attempt to revert a completed order to pending
+        $response = $this->http->patch('/api/v1/orders/1/status', [
+            'status' => 'pending',
+        ]);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertProblemDetails($response, 422, 'Invalid Order State Transition');
     }
 
     /**
@@ -28,9 +34,15 @@ class IllegalStateTransitionsTest extends OpaqueBoxTestCase
      */
     public function testFsmCancellingAlreadyRefundedOrderRejected(): void
     {
-        $refunded = OrderStatus::Refunded;
-        $this->assertTrue($refunded->isTerminal());
-        $this->assertFalse($refunded->canTransitionTo(OrderStatus::Cancelled));
+        $this->requireHttp();
+        $this->env->createLockfile();
+
+        $response = $this->http->patch('/api/v1/orders/2/status', [
+            'status' => 'cancelled',
+        ]);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertProblemDetails($response, 422, 'Invalid Order State Transition');
     }
 
     /**
@@ -38,9 +50,15 @@ class IllegalStateTransitionsTest extends OpaqueBoxTestCase
      */
     public function testFsmRefundingUncapturedPendingOrderRejected(): void
     {
-        $pending = OrderStatus::Pending;
-        $this->assertFalse($pending->canTransitionTo(OrderStatus::Refunded));
-        $this->assertTrue($pending->canTransitionTo(OrderStatus::Cancelled));
+        $this->requireHttp();
+        $this->env->createLockfile();
+
+        $response = $this->http->patch('/api/v1/orders/3/status', [
+            'status' => 'refunded',
+        ]);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertProblemDetails($response, 422, 'Invalid Order State Transition');
     }
 
     /**
@@ -48,21 +66,31 @@ class IllegalStateTransitionsTest extends OpaqueBoxTestCase
      */
     public function testFsmTransitioningCancelledOrderToCompletedRejected(): void
     {
-        $cancelled = OrderStatus::Cancelled;
-        $this->assertTrue($cancelled->isTerminal());
-        $this->assertFalse($cancelled->canTransitionTo(OrderStatus::Completed));
+        $this->requireHttp();
+        $this->env->createLockfile();
+
+        $response = $this->http->patch('/api/v1/orders/4/status', [
+            'status' => 'completed',
+        ]);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertProblemDetails($response, 422, 'Invalid Order State Transition');
     }
 
     /**
-     * Test 5: Idempotency of terminal state transitions (self-transition evaluation).
+     * Test 5: Idempotency of terminal state transitions (self-transition returns 200 OK).
      */
     public function testFsmDoubleRefundAndDoubleCancelIdempotency(): void
     {
-        $refunded = OrderStatus::Refunded;
-        $this->assertTrue($refunded->canTransitionTo(OrderStatus::Refunded));
+        $this->requireHttp();
+        $this->env->createLockfile();
 
-        $cancelled = OrderStatus::Cancelled;
-        $this->assertTrue($cancelled->canTransitionTo(OrderStatus::Cancelled));
+        // Self transition on refunded order is a valid idempotent no-op
+        $response = $this->http->patch('/api/v1/orders/2/status', [
+            'status' => 'refunded',
+        ]);
+
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     /**
@@ -70,7 +98,14 @@ class IllegalStateTransitionsTest extends OpaqueBoxTestCase
      */
     public function testFsmSkippingProcessingFromPendingToCompletedRejected(): void
     {
-        $pending = OrderStatus::Pending;
-        $this->assertFalse($pending->canTransitionTo(OrderStatus::Completed));
+        $this->requireHttp();
+        $this->env->createLockfile();
+
+        $response = $this->http->patch('/api/v1/orders/3/status', [
+            'status' => 'completed',
+        ]);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertProblemDetails($response, 422, 'Invalid Order State Transition');
     }
 }

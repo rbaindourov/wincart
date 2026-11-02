@@ -20,15 +20,14 @@ class CatalogFeatureTest extends OpaqueBoxTestCase
      */
     public function testCatalogProductSearchByKeyword(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->get('/api/v1/products?search=Chair');
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
 
-        if ($response->getStatusCode() === 200) {
-            $data = $response->getJson();
-            $this->assertIsArray($data);
-        }
+        $data = $response->getJson();
+        $this->assertIsArray($data);
     }
 
     /**
@@ -36,10 +35,11 @@ class CatalogFeatureTest extends OpaqueBoxTestCase
      */
     public function testCatalogCategoryFilteringAndHierarchy(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->get('/api/v1/products?category=laptops');
-        $this->assertContains($response->getStatusCode(), [200, 302]);
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     /**
@@ -47,10 +47,11 @@ class CatalogFeatureTest extends OpaqueBoxTestCase
      */
     public function testCatalogSkuExactLookup(): void
     {
+        $this->requireHttp();
         $this->env->createLockfile();
 
         $response = $this->http->get('/api/v1/products/sku/PROD-SKU-99');
-        $this->assertContains($response->getStatusCode(), [200, 302, 404]);
+        $this->assertSame(200, $response->getStatusCode());
     }
 
     /**
