@@ -1,0 +1,39 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use WinCart\Database\ConnectionFactory;
+use WinCart\Database\MigrationRunner;
+use WinCart\Database\TestFixtureSeeder;
+use WinCart\Mcp\McpServer;
+use WinCart\Mcp\Transports\StdioTransport;
+
+// 1. Establish PDO Connection
+$pdo = ConnectionFactory::createFromEnv();
+$driver = (string)(getenv('DB_CONNECTION') ?: 'sqlite');
+if ($driver === 'sqlite') {
+    $pdo->exec('PRAGMA foreign_keys = ON;');
+    $pdo->exec('PRAGMA busy_timeout = 5000;');
+    $hasMigrations = (int)$pdo->query(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='migrations'"
+    )->fetchColumn();
+} else {
+    $hasMigrations = (int)$pdo->query(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'migrations'"
+    )->fetchColumn();
+}
+
+// 2. Ensure Database Schema Exists (Auto-migration for ephemeral test sandboxes)
+if ($hasMigrations === 0) {
+    $runner = new MigrationRunner($pdo, dirname(__DIR__) . '/database/migrations');
+    $runner->migrateUp();
+    TestFixtureSeeder::seed($pdo);
+}
+
+// 3. Initialize & Run Stdio Transport
+$mcpServer = new McpServer($pdo);
+$transport = new StdioTransport($mcpServer);
+exit($transport->run());

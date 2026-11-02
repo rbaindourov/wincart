@@ -242,13 +242,47 @@ final class Kernel
             return new HttpResponse(200, $controller->index(), ['Content-Type' => ['text/html; charset=UTF-8']]);
         }
 
+        // --- Native MCP Server SSE Routes ---
+        if ($method === 'GET' && $path === '/api/mcp/sse') {
+            $sessionManager = new \WinCart\Mcp\Transports\SseSessionManager(
+                $this->env['STORAGE_PATH'] ?? dirname(__DIR__, 2) . '/storage'
+            );
+            $mcpServer = new \WinCart\Mcp\McpServer($pdo, $token);
+            $sseTransport = new \WinCart\Mcp\Transports\SseTransport($mcpServer, $sessionManager);
+            return $sseTransport->handleSseConnect($headers, $queryParams);
+        }
+
+        if ($method === 'POST' && $path === '/api/mcp/messages') {
+            $sessionManager = new \WinCart\Mcp\Transports\SseSessionManager(
+                $this->env['STORAGE_PATH'] ?? dirname(__DIR__, 2) . '/storage'
+            );
+            $mcpServer = new \WinCart\Mcp\McpServer($pdo, $token);
+            $sseTransport = new \WinCart\Mcp\Transports\SseTransport($mcpServer, $sessionManager);
+            $sessionId = (string)(
+                $queryParams['sessionId'] ?? $queryParams['session_id'] ?? $payload['sessionId'] ?? ''
+            );
+            return $sseTransport->handleMessagePost($sessionId, $body ?? '', $headers);
+        }
+
         // --- REST API Endpoints ---
-        if ($method === 'GET' && $path === '/api/v1/openapi.json') {
+        if ($method === 'GET' && ($path === '/openapi.json' || $path === '/api/v1/openapi.json')) {
             return $this->getOpenApiSpec();
         }
 
         if ($method === 'POST' && $path === '/api/v1/auth/login') {
             return $this->handleAuthLogin($payload, $sessionToken, $pdo);
+        }
+
+        // Category Endpoints
+        if ($path === '/api/v1/categories' || str_starts_with($path, '/api/v1/categories/')) {
+            $categoryController = new \WinCart\Api\Controllers\CategoryApiController($pdo);
+            if ($method === 'GET' && $path === '/api/v1/categories') {
+                return $categoryController->list($queryParams);
+            }
+            if ($method === 'GET' && preg_match('#^/api/v1/categories/([^/]+)$#', $path, $matches)) {
+                return $categoryController->show($matches[1]);
+            }
+            return ProblemDetails::create(404, 'Not Found', "Endpoint [{$method} {$path}] does not exist");
         }
 
         // Cart Endpoints
@@ -279,7 +313,7 @@ final class Kernel
             if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
-            if (!$this->hasScope($scopes, 'admin')) {
+            if (!$this->hasScope($scopes, 'admin') && !$this->hasScope($scopes, 'admin:read')) {
                 return ProblemDetails::create(403, 'Forbidden', 'Admin privileges required');
             }
             $aggregator = new AdminMetricAggregator($pdo);
@@ -290,7 +324,7 @@ final class Kernel
             if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
-            if (!$this->hasScope($scopes, 'admin')) {
+            if (!$this->hasScope($scopes, 'admin') && !$this->hasScope($scopes, 'admin:write')) {
                 return ProblemDetails::create(403, 'Forbidden', 'Admin privileges required');
             }
             $controller = new AdminSettingsController($pdo);
@@ -511,9 +545,10 @@ final class Kernel
         PDO $pdo
     ): HttpResponse {
         $controller = new AdminProductController($pdo);
+        $apiController = new \WinCart\Api\Controllers\ProductApiController($pdo);
 
         if ($method === 'GET' && $path === '/api/v1/products') {
-            $result = $controller->apiList($queryParams);
+            $result = $apiController->list($queryParams);
             return $this->jsonResponse(200, $result);
         }
 
@@ -524,11 +559,14 @@ final class Kernel
             if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
-            if (!$this->hasScope($scopes, 'write') && !$this->hasScope($scopes, 'admin')) {
+            if (
+                !$this->hasScope($scopes, 'products:write')
+                && !$this->hasScope($scopes, 'write')
+                && !$this->hasScope($scopes, 'admin')
+            ) {
                 return ProblemDetails::create(403, 'Forbidden', 'Token does not possess required privilege scope');
             }
-            $product = $controller->apiCreate($payload);
-            return $this->jsonResponse(201, $product);
+            return $apiController->create($payload);
         }
 
         if ($method === 'GET' && preg_match('#^/api/v1/products/sku/([a-zA-Z0-9_-]+)$#', $path, $matches)) {
@@ -539,34 +577,36 @@ final class Kernel
             return $this->jsonResponse(200, $product);
         }
 
-        if ($method === 'GET' && preg_match('#^/api/v1/products/(\d+)$#', $path, $matches)) {
-            $product = $controller->apiShow((int)$matches[1]);
-            if ($product === null) {
-                return ProblemDetails::create(404, 'Not Found', "Product #{$matches[1]} not found");
-            }
-            return $this->jsonResponse(200, $product);
+        if ($method === 'GET' && preg_match('#^/api/v1/products/([^/]+)$#', $path, $matches)) {
+            return $apiController->show($matches[1]);
         }
 
-        if ($method === 'PUT' && preg_match('#^/api/v1/products/(\d+)$#', $path, $matches)) {
+        if (($method === 'PUT' || $method === 'PATCH') && preg_match('#^/api/v1/products/(\d+)$#', $path, $matches)) {
             if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
-            if (!$this->hasScope($scopes, 'write') && !$this->hasScope($scopes, 'admin')) {
+            if (
+                !$this->hasScope($scopes, 'products:write')
+                && !$this->hasScope($scopes, 'write')
+                && !$this->hasScope($scopes, 'admin')
+            ) {
                 return ProblemDetails::create(403, 'Forbidden', 'Token does not possess required privilege scope');
             }
-            $product = $controller->apiUpdate((int)$matches[1], $payload);
-            return $this->jsonResponse(200, $product);
+            return $apiController->update((int)$matches[1], $payload);
         }
 
         if ($method === 'DELETE' && preg_match('#^/api/v1/products/(\d+)$#', $path, $matches)) {
             if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
-            if (!$this->hasScope($scopes, 'write') && !$this->hasScope($scopes, 'admin')) {
+            if (
+                !$this->hasScope($scopes, 'products:write')
+                && !$this->hasScope($scopes, 'write')
+                && !$this->hasScope($scopes, 'admin')
+            ) {
                 return ProblemDetails::create(403, 'Forbidden', 'Token does not possess required privilege scope');
             }
-            $controller->apiDelete((int)$matches[1]);
-            return new HttpResponse(204, '', []);
+            return $apiController->delete((int)$matches[1]);
         }
 
         return ProblemDetails::create(404, 'Not Found', "Endpoint [{$method} {$path}] not found");
@@ -668,13 +708,29 @@ final class Kernel
         PDO $pdo
     ): HttpResponse {
         $controller = new AdminOrderController($pdo);
+        $orderApiController = new \WinCart\Api\Controllers\OrderApiController($pdo);
+        $authorizer = new \WinCart\Api\Auth\ScopeAuthorizer($pdo);
+
+        $authCustomer = $token !== null ? $authorizer->resolveCustomerByToken($token) : null;
+        $authCustomerId = $authCustomer ? (int)$authCustomer['id'] : null;
+        $isAdmin = $authCustomer ? (($authCustomer['role'] ?? '') === 'admin') : false;
 
         if ($method === 'GET' && $path === '/api/v1/orders') {
             if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
-            $orders = $controller->apiList($queryParams);
-            return $this->jsonResponse(200, $orders);
+            if (
+                !$this->hasScope($scopes, 'orders:read')
+                && !$this->hasScope($scopes, 'read')
+                && !$this->hasScope($scopes, 'admin')
+            ) {
+                return ProblemDetails::create(
+                    403,
+                    'Forbidden',
+                    'Token does not possess required privilege scope: orders:read'
+                );
+            }
+            return $orderApiController->list($queryParams, $authCustomerId, $isAdmin);
         }
 
         if ($method === 'POST' && $path === '/api/v1/orders') {
@@ -689,32 +745,84 @@ final class Kernel
             if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
-            $order = $controller->apiShow((int)$matches[1]);
-            if ($order === null) {
-                return ProblemDetails::create(404, 'Not Found', "Order #{$matches[1]} not found");
+            if (
+                !$this->hasScope($scopes, 'orders:read')
+                && !$this->hasScope($scopes, 'read')
+                && !$this->hasScope($scopes, 'admin')
+            ) {
+                return ProblemDetails::create(
+                    403,
+                    'Forbidden',
+                    'Token does not possess required privilege scope: orders:read'
+                );
             }
-            return $this->jsonResponse(200, $order);
+            return $orderApiController->show((int)$matches[1], $authCustomerId, $isAdmin);
         }
 
         if ($method === 'PATCH' && preg_match('#^/api/v1/orders/(\d+)/status$#', $path, $matches)) {
+            if ($token !== null && $token !== '') {
+                if (empty($scopes)) {
+                    return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+                }
+                if (
+                    !$this->hasScope($scopes, 'orders:write')
+                    && !$this->hasScope($scopes, 'write')
+                    && !$this->hasScope($scopes, 'admin')
+                ) {
+                    return ProblemDetails::create(
+                        403,
+                        'Forbidden',
+                        'Token does not possess required privilege scope: orders:write'
+                    );
+                }
+            }
             $status = (string)($payload['status'] ?? '');
-            $order = $controller->apiUpdateStatus((int)$matches[1], $status);
-            return $this->jsonResponse(200, $order);
+            return $orderApiController->updateStatus((int)$matches[1], $status);
         }
 
         if ($method === 'POST' && preg_match('#^/api/v1/orders/(\d+)/cancel$#', $path, $matches)) {
+            if ($token !== null && $token !== '') {
+                if (empty($scopes)) {
+                    return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+                }
+                if (
+                    !$this->hasScope($scopes, 'orders:write')
+                    && !$this->hasScope($scopes, 'write')
+                    && !$this->hasScope($scopes, 'admin')
+                ) {
+                    return ProblemDetails::create(
+                        403,
+                        'Forbidden',
+                        'Token does not possess required privilege scope: orders:write'
+                    );
+                }
+            }
             $reason = isset($payload['reason']) ? (string)$payload['reason'] : null;
             $restock = (bool)($payload['restock'] ?? false);
-            $order = $controller->apiCancel((int)$matches[1], $reason, $restock);
-            return $this->jsonResponse(200, $order);
+            return $orderApiController->cancel((int)$matches[1], $reason, $restock);
         }
 
         if ($method === 'POST' && preg_match('#^/api/v1/orders/(\d+)/refund$#', $path, $matches)) {
+            if ($token !== null && $token !== '') {
+                if (empty($scopes)) {
+                    return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+                }
+                if (
+                    !$this->hasScope($scopes, 'orders:write')
+                    && !$this->hasScope($scopes, 'write')
+                    && !$this->hasScope($scopes, 'admin')
+                ) {
+                    return ProblemDetails::create(
+                        403,
+                        'Forbidden',
+                        'Token does not possess required privilege scope: orders:write'
+                    );
+                }
+            }
             $items = isset($payload['items']) && is_array($payload['items']) ? $payload['items'] : null;
             $reason = isset($payload['reason']) ? (string)$payload['reason'] : null;
             $restock = (bool)($payload['restock'] ?? false);
-            $order = $controller->apiRefund((int)$matches[1], $items, $reason, $restock);
-            return $this->jsonResponse(200, $order);
+            return $orderApiController->refund((int)$matches[1], $items, $reason, $restock);
         }
 
         return ProblemDetails::create(404, 'Not Found', "Endpoint [{$method} {$path}] not found");
@@ -787,28 +895,7 @@ final class Kernel
 
     private function getOpenApiSpec(): HttpResponse
     {
-        $spec = [
-            'openapi' => '3.0.0',
-            'info' => [
-                'title' => 'winCart Headless REST API',
-                'version' => '1.0.0',
-                'description' => 'Autonomous e-commerce engine API',
-            ],
-            'paths' => [
-                '/api/v1/products' => [
-                    'get' => ['summary' => 'List products'],
-                    'post' => ['summary' => 'Create product'],
-                ],
-                '/api/v1/cart' => [
-                    'get' => ['summary' => 'Get cart'],
-                    'post' => ['summary' => 'Create cart'],
-                ],
-                '/api/v1/checkout' => ['post' => ['summary' => 'Submit checkout']],
-                '/api/v1/orders' => ['get' => ['summary' => 'List orders']],
-            ],
-        ];
-
-        return $this->jsonResponse(200, $spec);
+        return $this->jsonResponse(200, \WinCart\Api\OpenApiGenerator::generate());
     }
 
     /**
@@ -844,22 +931,13 @@ final class Kernel
             return [];
         }
 
-        $tokenHash = hash('sha256', $token);
-        $stmt = $pdo->prepare(
-            'SELECT pat_scopes, role FROM customers '
-            . 'WHERE (pat_token_hash = :hash OR pat_token_hash = :tok) AND is_active = 1'
-        );
-        $stmt->execute([':hash' => $tokenHash, ':tok' => $token]);
-        $row = $stmt->fetch();
-        if ($row && !empty($row['pat_scopes'])) {
-            $scopes = array_map('trim', explode(',', (string)$row['pat_scopes']));
-            if (($row['role'] ?? '') === 'admin' && !in_array('admin', $scopes, true)) {
-                $scopes[] = 'admin';
-            }
-            return $scopes;
+        $authorizer = new \WinCart\Api\Auth\ScopeAuthorizer($pdo);
+        $customer = $authorizer->resolveCustomerByToken($token);
+        if ($customer === null) {
+            return [];
         }
 
-        return [];
+        return $authorizer->resolveScopes($customer);
     }
 
     /**
@@ -867,7 +945,9 @@ final class Kernel
      */
     private function hasScope(array $scopes, string $required): bool
     {
-        return in_array($required, $scopes, true) || in_array('admin', $scopes, true);
+        return in_array($required, $scopes, true)
+            || in_array('admin', $scopes, true)
+            || in_array('*', $scopes, true);
     }
 
     private function resolveCustomerId(?string $token, PDO $pdo): ?int
