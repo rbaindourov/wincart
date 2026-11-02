@@ -33,7 +33,8 @@
     },
     "scripts": {
         "test": "phpunit",
-        "check-style": "phpcs"
+        "test:e2e": "phpunit --testsuite E2E",
+        "check-style": "phpcs --standard=PSR12 src/ tests/"
     },
     "config": {
         "optimize-autoloader": true,
