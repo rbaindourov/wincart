@@ -81,23 +81,15 @@ final class Kernel
 
         // 1. Lockfile & Installation Security Interceptor
         $lockPath = $this->env['INSTALL_LOCK_PATH'] ?? dirname(__DIR__, 2) . '/storage/installed.lock';
-        $hasLockfile = file_exists($lockPath);
+        $lockMiddleware = new SecurityLockfileMiddleware($lockPath);
+        $interception = $lockMiddleware->handle($path);
 
-        if (!$hasLockfile) {
-            if (!str_starts_with($path, '/install')) {
-                return new HttpResponse(302, '', [
-                    'Location' => ['/install'],
-                    'Content-Type' => ['text/html; charset=UTF-8'],
-                ]);
-            }
-
-            return $this->handleInstaller($method, $path, $queryParams, $body);
+        if ($interception !== null) {
+            return $interception;
         }
 
-        if (str_starts_with($path, '/install')) {
-            return new HttpResponse(403, 'Installation locked. Store is already configured.', [
-                'Content-Type' => ['text/plain; charset=UTF-8'],
-            ]);
+        if (!file_exists($lockPath)) {
+            return $this->handleInstaller($method, $path, $queryParams, $body, $headers);
         }
 
         // 2. Dispatch Application Routes
@@ -140,38 +132,17 @@ final class Kernel
 
     /**
      * @param array<string, mixed> $queryParams
+     * @param array<string, string> $headers
      */
     private function handleInstaller(
         string $method,
         string $path,
         array $queryParams,
-        ?string $body
+        ?string $body,
+        array $headers = []
     ): HttpResponse {
-        if ($path === '/install/admin' && $method === 'POST') {
-            return new HttpResponse(302, '', [
-                'Location' => ['/install?step=2'],
-                'Content-Type' => ['text/html; charset=UTF-8'],
-            ]);
-        }
-
-        if ($path === '/install/database' && $method === 'POST') {
-            return new HttpResponse(200, 'Database configured successfully', [
-                'Content-Type' => ['text/plain; charset=UTF-8'],
-            ]);
-        }
-
-        ob_start();
-        $templatePath = dirname(__DIR__, 2) . '/templates/installer/wizard.php';
-        if (file_exists($templatePath)) {
-            require $templatePath;
-        } else {
-            echo '<h1>winCart Quick Installer</h1><p>PHP Version: ' . PHP_VERSION . '</p><p>storage/ is writable</p>';
-        }
-        $html = (string)ob_get_clean();
-
-        return new HttpResponse(200, $html, [
-            'Content-Type' => ['text/html; charset=UTF-8'],
-        ]);
+        $controller = new \WinCart\Installer\WebInstallerController($this->env);
+        return $controller->handle($method, $path, $queryParams, $body, $headers);
     }
 
     /**

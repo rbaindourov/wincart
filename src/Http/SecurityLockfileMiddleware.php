@@ -11,7 +11,10 @@ final class SecurityLockfileMiddleware
     public function __construct(private string $lockfilePath = '')
     {
         if ($this->lockfilePath === '') {
-            $this->lockfilePath = dirname(__DIR__, 2) . '/storage/installed.lock';
+            $this->lockfilePath = (string)(
+                getenv('INSTALL_LOCK_PATH')
+                ?: ($_ENV['INSTALL_LOCK_PATH'] ?? dirname(__DIR__, 2) . '/storage/installed.lock')
+            );
         }
     }
 
@@ -20,7 +23,12 @@ final class SecurityLockfileMiddleware
         $hasLockfile = file_exists($this->lockfilePath);
 
         if (!$hasLockfile) {
-            if (!str_starts_with($path, '/install')) {
+            // Allow installer routes and static assets to pass through
+            if (
+                !str_starts_with($path, '/install')
+                && !str_starts_with($path, '/assets/')
+                && !str_starts_with($path, '/favicon.ico')
+            ) {
                 return new HttpResponse(302, '', [
                     'Location' => ['/install'],
                     'Content-Type' => ['text/html; charset=UTF-8'],

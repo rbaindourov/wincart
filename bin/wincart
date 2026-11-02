@@ -1,0 +1,37 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+
+use WinCart\Installer\Cli\CliOptionParser;
+use WinCart\Installer\Cli\InstallCommand;
+
+$argvCopy = $argv;
+array_shift($argvCopy); // remove script name
+
+if (empty($argvCopy)) {
+    echo InstallCommand::getGlobalHelp();
+    exit(0);
+}
+
+$command = $argvCopy[0];
+if ($command === '-h' || $command === '--help') {
+    echo InstallCommand::getGlobalHelp();
+    exit(0);
+}
+
+if ($command === '-V' || $command === '--version') {
+    echo 'winCart v1.0.0 (PHP ' . PHP_VERSION . ")\n";
+    exit(0);
+}
+
+if ($command === 'install') {
+    $parsed = CliOptionParser::parse(array_slice($argvCopy, 1));
+    $installCommand = new InstallCommand();
+    exit($installCommand->execute($parsed));
+}
+
+fwrite(STDERR, "Unknown command: '{$command}'. Run 'bin/wincart --help' for available commands.\n");
+exit(1);

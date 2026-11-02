@@ -69,6 +69,14 @@ final class PdoProductRepository implements ProductRepositoryInterface
     }
 
     /**
+     * @return array<Product>
+     */
+    public function findByCategory(int $categoryId): array
+    {
+        return $this->search(['category_id' => $categoryId, 'is_active' => true], 100, 0);
+    }
+
+    /**
      * @param array<string, mixed> $criteria
      * @return array<Product>
      */

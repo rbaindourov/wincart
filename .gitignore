@@ -10,7 +10,8 @@ composer.phar
 # Storage artifacts & ephemeral runtime state
 /storage/*.sqlite
 /storage/*.sqlite-journal
-/storage/installed.lock
+/storage/*.lock
+/storage/installer_state.json
 /storage/cache/*
 !/storage/cache/.gitkeep
 /storage/logs/*
