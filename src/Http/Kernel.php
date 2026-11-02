@@ -553,9 +553,6 @@ final class Kernel
         }
 
         if ($method === 'POST' && $path === '/api/v1/products') {
-            if (!isset($payload['price']) || !is_numeric($payload['price'])) {
-                return ProblemDetails::create(422, 'Unprocessable Entity', 'Validation failed: price must be numeric');
-            }
             if ($token === null || $token === '' || empty($scopes)) {
                 return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
             }
@@ -565,6 +562,9 @@ final class Kernel
                 && !$this->hasScope($scopes, 'admin')
             ) {
                 return ProblemDetails::create(403, 'Forbidden', 'Token does not possess required privilege scope');
+            }
+            if (!isset($payload['price']) || !is_numeric($payload['price'])) {
+                return ProblemDetails::create(422, 'Unprocessable Entity', 'Validation failed: price must be numeric');
             }
             return $apiController->create($payload);
         }
@@ -713,7 +713,11 @@ final class Kernel
 
         $authCustomer = $token !== null ? $authorizer->resolveCustomerByToken($token) : null;
         $authCustomerId = $authCustomer ? (int)$authCustomer['id'] : null;
-        $isAdmin = $authCustomer ? (($authCustomer['role'] ?? '') === 'admin') : false;
+        $isAdmin = $authCustomer
+            ? (($authCustomer['role'] ?? '') === 'admin'
+                || in_array('admin', $scopes, true)
+                || in_array('*', $scopes, true))
+            : false;
 
         if ($method === 'GET' && $path === '/api/v1/orders') {
             if ($token === null || $token === '' || empty($scopes)) {
@@ -760,69 +764,63 @@ final class Kernel
         }
 
         if ($method === 'PATCH' && preg_match('#^/api/v1/orders/(\d+)/status$#', $path, $matches)) {
-            if ($token !== null && $token !== '') {
-                if (empty($scopes)) {
-                    return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
-                }
-                if (
-                    !$this->hasScope($scopes, 'orders:write')
-                    && !$this->hasScope($scopes, 'write')
-                    && !$this->hasScope($scopes, 'admin')
-                ) {
-                    return ProblemDetails::create(
-                        403,
-                        'Forbidden',
-                        'Token does not possess required privilege scope: orders:write'
-                    );
-                }
+            if ($token === null || $token === '' || empty($scopes)) {
+                return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+            }
+            if (
+                !$this->hasScope($scopes, 'orders:write')
+                && !$this->hasScope($scopes, 'write')
+                && !$this->hasScope($scopes, 'admin')
+            ) {
+                return ProblemDetails::create(
+                    403,
+                    'Forbidden',
+                    'Token does not possess required privilege scope: orders:write'
+                );
             }
             $status = (string)($payload['status'] ?? '');
-            return $orderApiController->updateStatus((int)$matches[1], $status);
+            return $orderApiController->updateStatus((int)$matches[1], $status, $authCustomerId, $isAdmin);
         }
 
         if ($method === 'POST' && preg_match('#^/api/v1/orders/(\d+)/cancel$#', $path, $matches)) {
-            if ($token !== null && $token !== '') {
-                if (empty($scopes)) {
-                    return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
-                }
-                if (
-                    !$this->hasScope($scopes, 'orders:write')
-                    && !$this->hasScope($scopes, 'write')
-                    && !$this->hasScope($scopes, 'admin')
-                ) {
-                    return ProblemDetails::create(
-                        403,
-                        'Forbidden',
-                        'Token does not possess required privilege scope: orders:write'
-                    );
-                }
+            if ($token === null || $token === '' || empty($scopes)) {
+                return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+            }
+            if (
+                !$this->hasScope($scopes, 'orders:write')
+                && !$this->hasScope($scopes, 'write')
+                && !$this->hasScope($scopes, 'admin')
+            ) {
+                return ProblemDetails::create(
+                    403,
+                    'Forbidden',
+                    'Token does not possess required privilege scope: orders:write'
+                );
             }
             $reason = isset($payload['reason']) ? (string)$payload['reason'] : null;
             $restock = (bool)($payload['restock'] ?? false);
-            return $orderApiController->cancel((int)$matches[1], $reason, $restock);
+            return $orderApiController->cancel((int)$matches[1], $reason, $restock, $authCustomerId, $isAdmin);
         }
 
         if ($method === 'POST' && preg_match('#^/api/v1/orders/(\d+)/refund$#', $path, $matches)) {
-            if ($token !== null && $token !== '') {
-                if (empty($scopes)) {
-                    return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
-                }
-                if (
-                    !$this->hasScope($scopes, 'orders:write')
-                    && !$this->hasScope($scopes, 'write')
-                    && !$this->hasScope($scopes, 'admin')
-                ) {
-                    return ProblemDetails::create(
-                        403,
-                        'Forbidden',
-                        'Token does not possess required privilege scope: orders:write'
-                    );
-                }
+            if ($token === null || $token === '' || empty($scopes)) {
+                return ProblemDetails::create(401, 'Unauthorized', 'Authentication token required');
+            }
+            if (
+                !$this->hasScope($scopes, 'orders:write')
+                && !$this->hasScope($scopes, 'write')
+                && !$this->hasScope($scopes, 'admin')
+            ) {
+                return ProblemDetails::create(
+                    403,
+                    'Forbidden',
+                    'Token does not possess required privilege scope: orders:write'
+                );
             }
             $items = isset($payload['items']) && is_array($payload['items']) ? $payload['items'] : null;
             $reason = isset($payload['reason']) ? (string)$payload['reason'] : null;
             $restock = (bool)($payload['restock'] ?? false);
-            return $orderApiController->refund((int)$matches[1], $items, $reason, $restock);
+            return $orderApiController->refund((int)$matches[1], $items, $reason, $restock, $authCustomerId, $isAdmin);
         }
 
         return ProblemDetails::create(404, 'Not Found', "Endpoint [{$method} {$path}] not found");

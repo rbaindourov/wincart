@@ -51,6 +51,7 @@ class ChallengerM3TwoStressTest extends TestCase
     private Kernel $kernel;
     private string $tempLockfile;
     private string $tempDbFile;
+    private string $tokenAdmin = 'pat_admin_scope_token';
 
     protected function setUp(): void
     {
@@ -63,8 +64,11 @@ class ChallengerM3TwoStressTest extends TestCase
         $runner = new MigrationRunner($this->pdo);
         $runner->migrateUp();
 
-        $this->pdo->exec('INSERT INTO customers (id, email, password_hash, first_name, last_name)
-            VALUES (1, "jane@example.com", "hash", "Jane", "Doe")');
+        $this->pdo->exec('INSERT INTO customers (
+            id, email, password_hash, first_name, last_name, role, pat_token_hash, pat_scopes
+        ) VALUES (
+            1, "jane@example.com", "hash", "Jane", "Doe", "admin", "pat_admin_scope_token", "admin,read,write"
+        )');
 
         $this->productRepo = new PdoProductRepository($this->pdo);
         $this->orderRepo = new PdoOrderRepository($this->pdo);
@@ -164,7 +168,10 @@ class ChallengerM3TwoStressTest extends TestCase
                 'PATCH',
                 "/api/v1/orders/{$orderId}/status",
                 (string)json_encode(['status' => $case['to']]),
-                ['Content-Type' => 'application/json']
+                [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer ' . $this->tokenAdmin,
+                ]
             );
 
             $this->assertSame(
@@ -220,7 +227,10 @@ class ChallengerM3TwoStressTest extends TestCase
                 'PATCH',
                 "/api/v1/orders/{$c['id']}/status",
                 (string)json_encode(['status' => $c['to']]),
-                ['Content-Type' => 'application/json']
+                [
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer ' . $this->tokenAdmin,
+                ]
             );
 
             $this->assertSame(

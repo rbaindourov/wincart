@@ -98,11 +98,20 @@ final class OrderApiController
         );
     }
 
-    public function updateStatus(int $id, string $statusString): HttpResponse
-    {
+    public function updateStatus(
+        int $id,
+        string $statusString,
+        ?int $authCustomerId = null,
+        bool $isAdmin = true
+    ): HttpResponse {
         $order = $this->orderRepository->findById($id);
         if ($order === null) {
             return ProblemDetails::create(404, 'Not Found', "Order #{$id} not found");
+        }
+
+        // Customer isolation guard
+        if (!$isAdmin && $order->getCustomerId() !== $authCustomerId) {
+            return ProblemDetails::create(403, 'Forbidden', 'Access denied to requested order resource');
         }
 
         $targetStatus = OrderStatus::tryFrom(strtolower($statusString));
@@ -122,11 +131,21 @@ final class OrderApiController
         }
     }
 
-    public function cancel(int $id, ?string $reason, bool $restock): HttpResponse
-    {
+    public function cancel(
+        int $id,
+        ?string $reason = null,
+        bool $restock = false,
+        ?int $authCustomerId = null,
+        bool $isAdmin = true
+    ): HttpResponse {
         $order = $this->orderRepository->findById($id);
         if ($order === null) {
             return ProblemDetails::create(404, 'Not Found', "Order #{$id} not found");
+        }
+
+        // Customer isolation guard
+        if (!$isAdmin && $order->getCustomerId() !== $authCustomerId) {
+            return ProblemDetails::create(403, 'Forbidden', 'Access denied to requested order resource');
         }
 
         try {
@@ -144,11 +163,22 @@ final class OrderApiController
     /**
      * @param list<array{product_id: int, quantity: int, variation_id?: ?int}>|null $items
      */
-    public function refund(int $id, ?array $items, ?string $reason, bool $restock): HttpResponse
-    {
+    public function refund(
+        int $id,
+        ?array $items = null,
+        ?string $reason = null,
+        bool $restock = false,
+        ?int $authCustomerId = null,
+        bool $isAdmin = true
+    ): HttpResponse {
         $order = $this->orderRepository->findById($id);
         if ($order === null) {
             return ProblemDetails::create(404, 'Not Found', "Order #{$id} not found");
+        }
+
+        // Customer isolation guard
+        if (!$isAdmin && $order->getCustomerId() !== $authCustomerId) {
+            return ProblemDetails::create(403, 'Forbidden', 'Access denied to requested order resource');
         }
 
         try {

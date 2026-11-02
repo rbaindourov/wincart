@@ -460,7 +460,7 @@ final class Milestone3CoreEcommerceStressTest extends OpaqueBoxTestCase
         $this->assertSame(7, $stockMid, 'Stock must deduct to 7 after order');
 
         // Cancel order with restock: true
-        $cancelRes = $this->http->post("/api/v1/orders/{$orderId}/cancel", [
+        $cancelRes = $this->http->withToken('pat_admin_scope_token')->post("/api/v1/orders/{$orderId}/cancel", [
             'restock' => true,
             'reason' => 'Customer requested cancellation',
         ]);
@@ -494,7 +494,7 @@ final class Milestone3CoreEcommerceStressTest extends OpaqueBoxTestCase
         $this->assertSame(7, $stockMid);
 
         // Cancel order with restock: false
-        $cancelRes = $this->http->post("/api/v1/orders/{$orderId}/cancel", [
+        $cancelRes = $this->http->withToken('pat_admin_scope_token')->post("/api/v1/orders/{$orderId}/cancel", [
             'restock' => false,
         ]);
         $this->assertSame(200, $cancelRes->getStatusCode());
@@ -528,7 +528,7 @@ final class Milestone3CoreEcommerceStressTest extends OpaqueBoxTestCase
         $this->assertSame('outofstock', $midRow['stock_status']);
 
         // Cancel with restock: true
-        $cancelRes = $this->http->post("/api/v1/orders/{$orderId}/cancel", [
+        $cancelRes = $this->http->withToken('pat_admin_scope_token')->post("/api/v1/orders/{$orderId}/cancel", [
             'restock' => true,
         ]);
         $this->assertSame(200, $cancelRes->getStatusCode());
@@ -560,7 +560,7 @@ final class Milestone3CoreEcommerceStressTest extends OpaqueBoxTestCase
         $orderId = $orderData['id'];
 
         // FSM transition: processing -> completed -> refunded (or processing -> refunded)
-        $refundRes = $this->http->post("/api/v1/orders/{$orderId}/refund", [
+        $refundRes = $this->http->withToken('pat_admin_scope_token')->post("/api/v1/orders/{$orderId}/refund", [
             'restock' => true,
             'reason' => 'Customer return',
         ]);
@@ -591,7 +591,7 @@ final class Milestone3CoreEcommerceStressTest extends OpaqueBoxTestCase
         $orderData = $this->assertJsonResponse($checkoutRes, 201);
         $orderId = $orderData['id'];
 
-        $refundRes = $this->http->post("/api/v1/orders/{$orderId}/refund", [
+        $refundRes = $this->http->withToken('pat_admin_scope_token')->post("/api/v1/orders/{$orderId}/refund", [
             'restock' => false,
         ]);
         $this->assertSame(200, $refundRes->getStatusCode());
@@ -617,7 +617,7 @@ final class Milestone3CoreEcommerceStressTest extends OpaqueBoxTestCase
         $orderId = $orderData['id'];
 
         // Partial refund of 1 unit
-        $refundRes = $this->http->post("/api/v1/orders/{$orderId}/refund", [
+        $refundRes = $this->http->withToken('pat_admin_scope_token')->post("/api/v1/orders/{$orderId}/refund", [
             'restock' => true,
             'items' => [['product_id' => 1, 'quantity' => 1]],
         ]);
@@ -747,7 +747,7 @@ final class Milestone3CoreEcommerceStressTest extends OpaqueBoxTestCase
         $orderData = $this->assertJsonResponse($checkoutRes, 201);
         $orderId = $orderData['id'];
 
-        $cancelRes = $this->http->post("/api/v1/orders/{$orderId}/cancel", [
+        $cancelRes = $this->http->withToken('pat_admin_scope_token')->post("/api/v1/orders/{$orderId}/cancel", [
             'restock' => true,
         ]);
         $this->assertSame(200, $cancelRes->getStatusCode());

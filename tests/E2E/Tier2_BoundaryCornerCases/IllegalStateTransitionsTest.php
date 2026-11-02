@@ -12,6 +12,12 @@ use WinCart\Tests\E2E\Support\OpaqueBoxTestCase;
  */
 class IllegalStateTransitionsTest extends OpaqueBoxTestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->http = $this->http->withToken('pat_admin_scope_token');
+    }
+
     /**
      * Test 1: Reverting completed order to pending or processing is strictly rejected with 422.
      */

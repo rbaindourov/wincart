@@ -94,7 +94,7 @@ class RestApiFeatureTest extends OpaqueBoxTestCase
         $this->requireHttp();
         $this->env->createLockfile();
 
-        $response = $this->http->post('/api/v1/products', [
+        $response = $this->http->withToken('pat_admin_scope_token')->post('/api/v1/products', [
             'price' => 'invalid-not-numeric',
         ]);
 

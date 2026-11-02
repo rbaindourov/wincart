@@ -710,6 +710,74 @@
                 }
             }
         },
+        "/api/v1/orders/{id}/cancel": {
+            "post": {
+                "summary": "Cancel an order and optionally restock items",
+                "operationId": "cancelOrder",
+                "security": [
+                    {
+                        "bearerAuth": [
+                            "orders:write"
+                        ]
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "reason": {
+                                        "type": "string"
+                                    },
+                                    "restock": {
+                                        "type": "boolean",
+                                        "default": false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Order cancelled",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Order"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/400BadRequest"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/401Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/403Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/404NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/422ValidationError"
+                    }
+                }
+            }
+        },
         "/api/v1/orders/{id}/refund": {
             "post": {
                 "summary": "Refund order items",
